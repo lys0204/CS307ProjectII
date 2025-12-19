@@ -219,19 +219,46 @@ async function apiCall(url, method = 'GET', body = null) {
  */
 async function register() {
     try {
+        const username = document.getElementById('reg-username').value;
+        const password = document.getElementById('reg-password').value;
+        const genderValue = document.getElementById('reg-gender').value;
+        const age = parseInt(document.getElementById('reg-age').value);
+        
+        // 验证必填字段
+        if (!username || !password || !genderValue || !age || age <= 0) {
+            alert('请填写完整的注册信息');
+            return;
+        }
+        
+        // 转换性别：M -> MALE, F -> FEMALE, O -> UNKNOWN
+        let genderEnum;
+        if (genderValue === 'M') {
+            genderEnum = 'MALE';
+        } else if (genderValue === 'F') {
+            genderEnum = 'FEMALE';
+        } else {
+            genderEnum = 'UNKNOWN';
+        }
+        
+        // 计算生日（从年龄反推，使用当前日期减去年龄）
+        const today = new Date();
+        const birthYear = today.getFullYear() - age;
+        const birthday = `${birthYear}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        
         const req = {
-            username: document.getElementById('reg-username').value,
-            password: document.getElementById('reg-password').value,
-            gender: document.getElementById('reg-gender').value,
-            age: parseInt(document.getElementById('reg-age').value)
+            name: username,
+            password: password,
+            gender: genderEnum,
+            birthday: birthday
         };
+        
         const result = await apiCall(`${API_BASE}/users/register`, 'POST', req);
         if (result.userId) {
             alert('注册成功！用户ID: ' + result.userId);
             closeModal();
             // 可以自动登录
             document.getElementById('login-id').value = result.userId;
-            document.getElementById('login-password').value = req.password;
+            document.getElementById('login-password').value = password;
             login();
         }
     } catch (error) {

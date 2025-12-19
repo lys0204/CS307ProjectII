@@ -12,22 +12,15 @@
         <div class="header-container">
             <div class="header-left">
                 <div class="logo">🍳 SUSTC</div>
-                <nav class="main-nav">
-                    <a href="#" class="nav-item active">首页</a>
-                    <a href="#" class="nav-item" onclick="switchTab('recipe'); return false;">食谱</a>
-                    <a href="#" class="nav-item" onclick="switchTab('review'); return false;">评论</a>
-                    <a href="#" class="nav-item" onclick="switchTab('user'); return false;">用户</a>
-                </nav>
             </div>
             <div class="header-center">
                 <div class="search-box">
-                    <input type="text" id="global-search" placeholder="搜索食谱、用户..." class="search-input">
+                    <input type="text" id="global-search" placeholder="搜索食谱..." class="search-input">
                     <button class="search-btn" onclick="globalSearch()">🔍</button>
                 </div>
             </div>
             <div class="header-right">
-                <button class="btn-upload" onclick="showUploadModal()">投稿</button>
-                <div class="user-menu">
+                <div class="user-menu" onclick="showLoginModal()">
                     <span class="user-avatar">👤</span>
                     <span class="user-name" id="current-user">未登录</span>
                 </div>
@@ -35,19 +28,11 @@
         </div>
     </header>
 
-    <!-- 主导航栏 -->
+    <!-- 分类导航栏 -->
     <nav class="category-nav">
         <div class="category-container">
-            <div class="category-left">
-                <a href="#" class="category-btn active" onclick="loadFeed(); return false;">
-                    <span class="icon">🔥</span> 热门
-                </a>
-                <a href="#" class="category-btn" onclick="switchTab('recipe'); return false;">
-                    <span class="icon">📝</span> 食谱
-                </a>
-            </div>
             <div class="category-right">
-                <a href="#" class="category-tag" onclick="filterByCategory(''); return false;">全部</a>
+                <a href="#" class="category-tag active" onclick="filterByCategory(''); return false;">全部</a>
                 <a href="#" class="category-tag" onclick="filterByCategory('Breakfast'); return false;">早餐</a>
                 <a href="#" class="category-tag" onclick="filterByCategory('Lunch/Snacks'); return false;">午餐</a>
                 <a href="#" class="category-tag" onclick="filterByCategory('Dessert'); return false;">甜品</a>
@@ -62,14 +47,6 @@
         <div class="content-container">
             <!-- 左侧内容区 -->
             <div class="content-left">
-                <!-- 轮播图区域 -->
-                <div class="banner-section">
-                    <div class="banner-placeholder">
-                        <div class="banner-text">🍳 发现美味食谱</div>
-                        <div class="banner-subtitle">探索来自世界各地的美食</div>
-                    </div>
-                </div>
-
                 <!-- 内容区域 -->
                 <div class="content-section">
                     <div class="section-header">
@@ -82,20 +59,6 @@
                     <div id="loading" class="loading" style="display: none;">加载中...</div>
                 </div>
             </div>
-
-            <!-- 右侧边栏 -->
-            <aside class="sidebar">
-                <div class="sidebar-card">
-                    <h3>热门分类</h3>
-                    <div class="tag-list">
-                        <span class="tag">早餐</span>
-                        <span class="tag">午餐</span>
-                        <span class="tag">晚餐</span>
-                        <span class="tag">甜品</span>
-                        <span class="tag">饮品</span>
-                    </div>
-                </div>
-            </aside>
         </div>
     </main>
 
