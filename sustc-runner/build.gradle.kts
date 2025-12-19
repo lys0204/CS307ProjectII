@@ -28,6 +28,10 @@ dependencies {
 
     // 添加OpenCSV依赖
     implementation("com.opencsv:opencsv:5.7.1")
+
+    // Redis 缓存
+    implementation("org.springframework.boot:spring-boot-starter-data-redis")
+    implementation("org.apache.commons:commons-pool2") // Lettuce 连接池需要
 }
 
 tasks.withType<JavaExec> {

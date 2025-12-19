@@ -1,6 +1,8 @@
 package io.sustc.controller;
 
-import io.sustc.dto.*;
+import io.sustc.dto.PageResult;
+import io.sustc.dto.ReviewRecord;
+import io.sustc.service.CacheService;
 import io.sustc.service.ReviewService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,92 +21,8 @@ public class ReviewController {
     @Autowired
     private ReviewService reviewService;
 
-    @PostMapping
-    public ResponseEntity<?> addReview(@RequestBody Map<String, Object> request) {
-        try {
-            AuthInfo auth = parseAuthInfo(request);
-            long recipeId = ((Number) request.get("recipeId")).longValue();
-            int rating = ((Number) request.get("rating")).intValue();
-            String review = (String) request.get("review");
-            
-            long reviewId = reviewService.addReview(auth, recipeId, rating, review);
-            return ResponseEntity.ok(Map.of("reviewId", reviewId));
-        } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @PutMapping("/{reviewId}")
-    public ResponseEntity<?> editReview(
-            @PathVariable long reviewId,
-            @RequestBody Map<String, Object> request) {
-        try {
-            AuthInfo auth = parseAuthInfo(request);
-            long recipeId = ((Number) request.get("recipeId")).longValue();
-            int rating = ((Number) request.get("rating")).intValue();
-            String review = (String) request.get("review");
-            
-            reviewService.editReview(auth, recipeId, reviewId, rating, review);
-            return ResponseEntity.ok(Map.of("success", true));
-        } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @DeleteMapping("/{reviewId}")
-    public ResponseEntity<?> deleteReview(
-            @PathVariable long reviewId,
-            @RequestBody Map<String, Object> request) {
-        try {
-            AuthInfo auth = parseAuthInfo(request);
-            long recipeId = ((Number) request.get("recipeId")).longValue();
-            
-            reviewService.deleteReview(auth, recipeId, reviewId);
-            return ResponseEntity.ok(Map.of("success", true));
-        } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @PostMapping("/{reviewId}/like")
-    public ResponseEntity<?> likeReview(@PathVariable long reviewId, @RequestBody AuthInfo auth) {
-        try {
-            long likes = reviewService.likeReview(auth, reviewId);
-            return ResponseEntity.ok(Map.of("likes", likes));
-        } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @DeleteMapping("/{reviewId}/like")
-    public ResponseEntity<?> unlikeReview(@PathVariable long reviewId, @RequestBody AuthInfo auth) {
-        try {
-            long likes = reviewService.unlikeReview(auth, reviewId);
-            return ResponseEntity.ok(Map.of("likes", likes));
-        } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
-        }
-    }
+    @Autowired
+    private CacheService cacheService;
 
     @GetMapping("/recipe/{recipeId}")
     public ResponseEntity<?> listByRecipe(
@@ -113,36 +31,24 @@ public class ReviewController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String sort) {
         try {
-            PageResult<ReviewRecord> result = reviewService.listByRecipe(recipeId, page, size, sort);
+            // 先尝试从缓存获取
+            @SuppressWarnings("unchecked")
+            PageResult<ReviewRecord> result = (PageResult<ReviewRecord>) cacheService.getReviews(recipeId, page, size, sort, PageResult.class);
+            
+            if (result == null) {
+                // 缓存未命中，从数据库查询
+                result = reviewService.listByRecipe(recipeId, page, size, sort);
+                // 写入缓存
+                cacheService.setReviews(recipeId, page, size, sort, result);
+            }
+            
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.error("Error getting reviews for recipe: {}", recipeId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
-    }
-
-    @PostMapping("/recipe/{recipeId}/refresh-rating")
-    public ResponseEntity<?> refreshRecipeAggregatedRating(@PathVariable long recipeId) {
-        try {
-            RecipeRecord recipe = reviewService.refreshRecipeAggregatedRating(recipeId);
-            return ResponseEntity.ok(recipe);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    private AuthInfo parseAuthInfo(Map<String, Object> request) {
-        AuthInfo auth = new AuthInfo();
-        if (request.get("authorId") != null) {
-            auth.setAuthorId(((Number) request.get("authorId")).longValue());
-        }
-        if (request.get("password") != null) {
-            auth.setPassword((String) request.get("password"));
-        }
-        return auth;
     }
 }
 

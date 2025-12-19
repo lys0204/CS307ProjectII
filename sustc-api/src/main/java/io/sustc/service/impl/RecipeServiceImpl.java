@@ -63,14 +63,16 @@ public class RecipeServiceImpl implements RecipeService {
             throw new IllegalArgumentException("recipeId must be positive");
         }
         try {
-            // 查询菜谱基本信息
+            // 查询菜谱基本信息（从 recipes 和 nutrition 表 JOIN）
             Map<String, Object> row = jdbcTemplate.queryForMap(
-                    "SELECT RecipeId, Name, AuthorId, CookTime, PrepTime, TotalTime, " +
-                            "DatePublished, Description, RecipeCategory, AggregatedRating, ReviewCount, " +
-                            "Calories, FatContent, SaturatedFatContent, CholesterolContent, SodiumContent, " +
-                            "CarbohydrateContent, FiberContent, SugarContent, ProteinContent, " +
-                            "RecipeServings, RecipeYield " +
-                            "FROM recipes WHERE RecipeId = ?",
+                    "SELECT r.RecipeId, r.Name, r.AuthorId, r.CookTime, r.PrepTime, r.TotalTime, " +
+                            "r.DatePublished, r.Description, r.RecipeCategory, r.AggregatedRating, r.ReviewCount, " +
+                            "r.RecipeServings, r.RecipeYield, " +
+                            "n.Calories, n.FatContent, n.SaturatedFatContent, n.CholesterolContent, n.SodiumContent, " +
+                            "n.CarbohydrateContent, n.FiberContent, n.SugarContent, n.ProteinContent " +
+                            "FROM recipes r " +
+                            "LEFT JOIN nutrition n ON r.RecipeId = n.RecipeId " +
+                            "WHERE r.RecipeId = ?",
                     recipeId
             );
 
@@ -102,15 +104,25 @@ public class RecipeServiceImpl implements RecipeService {
             Object aggObj = row.get("aggregatedrating");
             recipe.setAggregatedRating(aggObj == null ? 0 : ((Number) aggObj).floatValue());
             recipe.setReviewCount(((Number) row.get("reviewcount")).intValue());
-            recipe.setCalories(((Number) row.get("calories")).floatValue());
-            recipe.setFatContent(((Number) row.get("fatcontent")).floatValue());
-            recipe.setSaturatedFatContent(((Number) row.get("saturatedfatcontent")).floatValue());
-            recipe.setCholesterolContent(((Number) row.get("cholesterolcontent")).floatValue());
-            recipe.setSodiumContent(((Number) row.get("sodiumcontent")).floatValue());
-            recipe.setCarbohydrateContent(((Number) row.get("carbohydratecontent")).floatValue());
-            recipe.setFiberContent(((Number) row.get("fibercontent")).floatValue());
-            recipe.setSugarContent(((Number) row.get("sugarcontent")).floatValue());
-            recipe.setProteinContent(((Number) row.get("proteincontent")).floatValue());
+            // 从 nutrition 表读取营养信息
+            Object caloriesObj = row.get("calories");
+            recipe.setCalories(caloriesObj == null ? 0.0f : ((Number) caloriesObj).floatValue());
+            Object fatObj = row.get("fatcontent");
+            recipe.setFatContent(fatObj == null ? 0.0f : ((Number) fatObj).floatValue());
+            Object satFatObj = row.get("saturatedfatcontent");
+            recipe.setSaturatedFatContent(satFatObj == null ? 0.0f : ((Number) satFatObj).floatValue());
+            Object cholObj = row.get("cholesterolcontent");
+            recipe.setCholesterolContent(cholObj == null ? 0.0f : ((Number) cholObj).floatValue());
+            Object sodiumObj = row.get("sodiumcontent");
+            recipe.setSodiumContent(sodiumObj == null ? 0.0f : ((Number) sodiumObj).floatValue());
+            Object carbObj = row.get("carbohydratecontent");
+            recipe.setCarbohydrateContent(carbObj == null ? 0.0f : ((Number) carbObj).floatValue());
+            Object fiberObj = row.get("fibercontent");
+            recipe.setFiberContent(fiberObj == null ? 0.0f : ((Number) fiberObj).floatValue());
+            Object sugarObj = row.get("sugarcontent");
+            recipe.setSugarContent(sugarObj == null ? 0.0f : ((Number) sugarObj).floatValue());
+            Object proteinObj = row.get("proteincontent");
+            recipe.setProteinContent(proteinObj == null ? 0.0f : ((Number) proteinObj).floatValue());
             Object servingsObj = row.get("recipeservings");
             recipe.setRecipeServings(servingsObj == null ? 0 : Integer.parseInt(servingsObj.toString()));
             recipe.setRecipeYield((String) row.get("recipeyield"));
@@ -136,54 +148,59 @@ public class RecipeServiceImpl implements RecipeService {
         StringBuilder whereClause = new StringBuilder("WHERE 1=1");
 
         if (keyword != null && !keyword.trim().isEmpty()) {
-            whereClause.append(" AND (LOWER(Name) LIKE ? OR LOWER(Description) LIKE ?)");
+            whereClause.append(" AND (LOWER(r.Name) LIKE ? OR LOWER(r.Description) LIKE ?)");
             String keywordPattern = "%" + keyword.toLowerCase() + "%";
             params.add(keywordPattern);
             params.add(keywordPattern);
         }
 
         if (category != null && !category.trim().isEmpty()) {
-            whereClause.append(" AND RecipeCategory = ?");
+            whereClause.append(" AND r.RecipeCategory = ?");
             params.add(category);
         }
 
         if (minRating != null) {
-            whereClause.append(" AND AggregatedRating >= ?");
+            whereClause.append(" AND r.AggregatedRating >= ?");
             params.add(minRating);
         }
 
-        // 统计总数
+        // 统计总数（使用 recipes 表）
         Long total = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM recipes " + whereClause.toString(),
+                "SELECT COUNT(*) FROM recipes r " + whereClause.toString(),
                 params.toArray(),
                 Long.class
         );
         if (total == null) total = 0L;
 
-        // 构建排序
-        String orderBy = "ORDER BY RecipeId DESC";
+        // 构建排序（calories_asc 需要从 nutrition 表排序）
+        String orderBy = "ORDER BY r.RecipeId DESC";
+        boolean needNutritionJoin = false;
         if (sort != null) {
             switch (sort) {
                 case "rating_desc":
-                    orderBy = "ORDER BY AggregatedRating DESC NULLS LAST, RecipeId DESC";
+                    orderBy = "ORDER BY r.AggregatedRating DESC NULLS LAST, r.RecipeId DESC";
                     break;
                 case "date_desc":
-                    orderBy = "ORDER BY DatePublished DESC NULLS LAST, RecipeId DESC";
+                    orderBy = "ORDER BY r.DatePublished DESC NULLS LAST, r.RecipeId DESC";
                     break;
                 case "calories_asc":
-                    orderBy = "ORDER BY Calories ASC NULLS LAST, RecipeId ASC";
+                    orderBy = "ORDER BY n.Calories ASC NULLS LAST, r.RecipeId ASC";
+                    needNutritionJoin = true;
                     break;
             }
         }
 
-        // 分页查询
+        // 分页查询（从 recipes 和 nutrition 表 JOIN）
         int offset = (page - 1) * size;
-        String sql = "SELECT RecipeId, Name, AuthorId, CookTime, PrepTime, TotalTime, " +
-                "DatePublished, Description, RecipeCategory, AggregatedRating, ReviewCount, " +
-                "Calories, FatContent, SaturatedFatContent, CholesterolContent, SodiumContent, " +
-                "CarbohydrateContent, FiberContent, SugarContent, ProteinContent, " +
-                "RecipeServings, RecipeYield " +
-                "FROM recipes " + whereClause.toString() + " " + orderBy + " LIMIT ? OFFSET ?";
+        String fromClause = needNutritionJoin 
+                ? "FROM recipes r LEFT JOIN nutrition n ON r.RecipeId = n.RecipeId"
+                : "FROM recipes r LEFT JOIN nutrition n ON r.RecipeId = n.RecipeId";
+        String sql = "SELECT r.RecipeId, r.Name, r.AuthorId, r.CookTime, r.PrepTime, r.TotalTime, " +
+                "r.DatePublished, r.Description, r.RecipeCategory, r.AggregatedRating, r.ReviewCount, " +
+                "r.RecipeServings, r.RecipeYield, " +
+                "n.Calories, n.FatContent, n.SaturatedFatContent, n.CholesterolContent, n.SodiumContent, " +
+                "n.CarbohydrateContent, n.FiberContent, n.SugarContent, n.ProteinContent " +
+                fromClause + " " + whereClause.toString() + " " + orderBy + " LIMIT ? OFFSET ?";
         params.add(size);
         params.add(offset);
 
@@ -201,15 +218,25 @@ public class RecipeServiceImpl implements RecipeService {
             Object aggObj = rs.getObject("AggregatedRating");
             r.setAggregatedRating(aggObj == null ? 0 : ((Number) aggObj).floatValue());
             r.setReviewCount(rs.getInt("ReviewCount"));
-            r.setCalories(rs.getFloat("Calories"));
-            r.setFatContent(rs.getFloat("FatContent"));
-            r.setSaturatedFatContent(rs.getFloat("SaturatedFatContent"));
-            r.setCholesterolContent(rs.getFloat("CholesterolContent"));
-            r.setSodiumContent(rs.getFloat("SodiumContent"));
-            r.setCarbohydrateContent(rs.getFloat("CarbohydrateContent"));
-            r.setFiberContent(rs.getFloat("FiberContent"));
-            r.setSugarContent(rs.getFloat("SugarContent"));
-            r.setProteinContent(rs.getFloat("ProteinContent"));
+            // 从 nutrition 表读取营养信息
+            Object caloriesObj = rs.getObject("Calories");
+            r.setCalories(caloriesObj == null ? 0.0f : ((Number) caloriesObj).floatValue());
+            Object fatObj = rs.getObject("FatContent");
+            r.setFatContent(fatObj == null ? 0.0f : ((Number) fatObj).floatValue());
+            Object satFatObj = rs.getObject("SaturatedFatContent");
+            r.setSaturatedFatContent(satFatObj == null ? 0.0f : ((Number) satFatObj).floatValue());
+            Object cholObj = rs.getObject("CholesterolContent");
+            r.setCholesterolContent(cholObj == null ? 0.0f : ((Number) cholObj).floatValue());
+            Object sodiumObj = rs.getObject("SodiumContent");
+            r.setSodiumContent(sodiumObj == null ? 0.0f : ((Number) sodiumObj).floatValue());
+            Object carbObj = rs.getObject("CarbohydrateContent");
+            r.setCarbohydrateContent(carbObj == null ? 0.0f : ((Number) carbObj).floatValue());
+            Object fiberObj = rs.getObject("FiberContent");
+            r.setFiberContent(fiberObj == null ? 0.0f : ((Number) fiberObj).floatValue());
+            Object sugarObj = rs.getObject("SugarContent");
+            r.setSugarContent(sugarObj == null ? 0.0f : ((Number) sugarObj).floatValue());
+            Object proteinObj = rs.getObject("ProteinContent");
+            r.setProteinContent(proteinObj == null ? 0.0f : ((Number) proteinObj).floatValue());
             Object servingsObj = rs.getObject("RecipeServings");
             r.setRecipeServings(servingsObj == null ? 0 : Integer.parseInt(servingsObj.toString()));
             r.setRecipeYield(rs.getString("RecipeYield"));
@@ -261,14 +288,12 @@ public class RecipeServiceImpl implements RecipeService {
                 Long.class
         );
 
-        // 插入菜谱
+        // 插入菜谱（不包含营养信息）
         jdbcTemplate.update(
                 "INSERT INTO recipes (RecipeId, Name, AuthorId, CookTime, PrepTime, TotalTime, " +
                         "DatePublished, Description, RecipeCategory, AggregatedRating, ReviewCount, " +
-                        "Calories, FatContent, SaturatedFatContent, CholesterolContent, SodiumContent, " +
-                        "CarbohydrateContent, FiberContent, SugarContent, ProteinContent, " +
                         "RecipeServings, RecipeYield) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 newRecipeId,
                 dto.getName().trim(),
                 authorId,
@@ -280,18 +305,39 @@ public class RecipeServiceImpl implements RecipeService {
                 dto.getRecipeCategory(),
                 dto.getAggregatedRating(),
                 dto.getReviewCount(),
-                dto.getCalories(),
-                dto.getFatContent(),
-                dto.getSaturatedFatContent(),
-                dto.getCholesterolContent(),
-                dto.getSodiumContent(),
-                dto.getCarbohydrateContent(),
-                dto.getFiberContent(),
-                dto.getSugarContent(),
-                dto.getProteinContent(),
                 dto.getRecipeServings(),
                 dto.getRecipeYield()
         );
+
+        // 插入营养信息到 nutrition 表
+        if (dto.getCalories() > 0) {
+            jdbcTemplate.update(
+                    "INSERT INTO nutrition (RecipeId, Calories, FatContent, SaturatedFatContent, " +
+                            "CholesterolContent, SodiumContent, CarbohydrateContent, FiberContent, " +
+                            "SugarContent, ProteinContent) " +
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                            "ON CONFLICT (RecipeId) DO UPDATE SET " +
+                            "Calories = EXCLUDED.Calories, " +
+                            "FatContent = EXCLUDED.FatContent, " +
+                            "SaturatedFatContent = EXCLUDED.SaturatedFatContent, " +
+                            "CholesterolContent = EXCLUDED.CholesterolContent, " +
+                            "SodiumContent = EXCLUDED.SodiumContent, " +
+                            "CarbohydrateContent = EXCLUDED.CarbohydrateContent, " +
+                            "FiberContent = EXCLUDED.FiberContent, " +
+                            "SugarContent = EXCLUDED.SugarContent, " +
+                            "ProteinContent = EXCLUDED.ProteinContent",
+                    newRecipeId,
+                    dto.getCalories(),
+                    dto.getFatContent(),
+                    dto.getSaturatedFatContent(),
+                    dto.getCholesterolContent(),
+                    dto.getSodiumContent(),
+                    dto.getCarbohydrateContent(),
+                    dto.getFiberContent(),
+                    dto.getSugarContent(),
+                    dto.getProteinContent()
+            );
+        }
 
         // 插入配料
         if (dto.getRecipeIngredientParts() != null && dto.getRecipeIngredientParts().length > 0) {
@@ -334,10 +380,11 @@ public class RecipeServiceImpl implements RecipeService {
             throw new SecurityException("only recipe author can delete recipe");
         }
 
-        // 级联删除：先删依赖数据，再删菜谱
+        // 级联删除：先删依赖数据，再删菜谱（nutrition 表会通过外键 CASCADE 自动删除）
         jdbcTemplate.update("DELETE FROM review_likes WHERE ReviewId IN (SELECT ReviewId FROM reviews WHERE RecipeId = ?)", recipeId);
         jdbcTemplate.update("DELETE FROM reviews WHERE RecipeId = ?", recipeId);
         jdbcTemplate.update("DELETE FROM recipe_ingredients WHERE RecipeId = ?", recipeId);
+        jdbcTemplate.update("DELETE FROM nutrition WHERE RecipeId = ?", recipeId);
         jdbcTemplate.update("DELETE FROM recipes WHERE RecipeId = ?", recipeId);
     }
 
@@ -418,26 +465,26 @@ public class RecipeServiceImpl implements RecipeService {
 
     @Override
     public Map<String, Object> getClosestCaloriePair() {
-        // 先检查是否有至少两个菜谱有卡路里值
+        // 先检查是否有至少两个菜谱有卡路里值（从 nutrition 表）
         Long count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM recipes WHERE Calories IS NOT NULL",
+                "SELECT COUNT(*) FROM nutrition WHERE Calories IS NOT NULL",
                 Long.class
         );
         if (count == null || count < 2) {
             return null;
         }
 
-        // 使用 SQL 找出卡路里最接近的一对菜谱
+        // 使用 SQL 找出卡路里最接近的一对菜谱（从 nutrition 表）
         String sql = "WITH ranked_pairs AS (" +
                 "    SELECT " +
-                "        r1.RecipeId AS RecipeA, " +
-                "        r2.RecipeId AS RecipeB, " +
-                "        r1.Calories AS CaloriesA, " +
-                "        r2.Calories AS CaloriesB, " +
-                "        ABS(r1.Calories - r2.Calories) AS Difference " +
-                "    FROM recipes r1 " +
-                "    JOIN recipes r2 ON r1.RecipeId < r2.RecipeId " +
-                "    WHERE r1.Calories IS NOT NULL AND r2.Calories IS NOT NULL " +
+                "        n1.RecipeId AS RecipeA, " +
+                "        n2.RecipeId AS RecipeB, " +
+                "        n1.Calories AS CaloriesA, " +
+                "        n2.Calories AS CaloriesB, " +
+                "        ABS(n1.Calories - n2.Calories) AS Difference " +
+                "    FROM nutrition n1 " +
+                "    JOIN nutrition n2 ON n1.RecipeId < n2.RecipeId " +
+                "    WHERE n1.Calories IS NOT NULL AND n2.Calories IS NOT NULL " +
                 ") " +
                 "SELECT RecipeA, RecipeB, CaloriesA, CaloriesB, Difference " +
                 "FROM ranked_pairs " +

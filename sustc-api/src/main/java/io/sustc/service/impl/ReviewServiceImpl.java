@@ -360,10 +360,11 @@ public class ReviewServiceImpl implements ReviewService {
         }
 
         // 计算平均评分和评论数
+        // Rating=0 的评论会被排除在平均值计算和 ReviewCount 之外
         Map<String, Object> stats = jdbcTemplate.queryForMap(
                 "SELECT " +
-                        "COUNT(*) AS ReviewCount, " +
-                        "ROUND(AVG(Rating)::numeric, 2) AS AvgRating " +
+                        "COUNT(CASE WHEN Rating > 0 THEN 1 ELSE NULL END) AS ReviewCount, " +
+                        "ROUND(AVG(CASE WHEN Rating > 0 THEN Rating ELSE NULL END)::numeric, 2) AS AvgRating " +
                         "FROM reviews WHERE RecipeId = ?",
                 recipeId
         );
@@ -372,9 +373,10 @@ public class ReviewServiceImpl implements ReviewService {
         Object avgRatingObj = stats.get("avgrating");
 
         // 更新菜谱
+        // benchmark 期望当没有评论时，AggregatedRating 应该设置为 0.0 而不是 NULL
         if (reviewCount == 0 || avgRatingObj == null) {
             jdbcTemplate.update(
-                    "UPDATE recipes SET AggregatedRating = NULL, ReviewCount = 0 WHERE RecipeId = ?",
+                    "UPDATE recipes SET AggregatedRating = 0.0, ReviewCount = 0 WHERE RecipeId = ?",
                     recipeId
             );
         } else {
