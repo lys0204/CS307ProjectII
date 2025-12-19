@@ -21,9 +21,6 @@ public class RecipeServiceImpl implements RecipeService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    /**
-     * 校验 auth 对应的用户是否存在且未被软删除，返回用户 ID
-     */
     private long requireActiveUser(AuthInfo auth) {
         if (auth == null) {
             throw new SecurityException("auth is null");
@@ -63,7 +60,6 @@ public class RecipeServiceImpl implements RecipeService {
             throw new IllegalArgumentException("recipeId must be positive");
         }
         try {
-            // 查询菜谱基本信息（从 recipes 和 nutrition 表 JOIN）
             Map<String, Object> row = jdbcTemplate.queryForMap(
                     "SELECT r.RecipeId, r.Name, r.AuthorId, r.CookTime, r.PrepTime, r.TotalTime, " +
                             "r.DatePublished, r.Description, r.RecipeCategory, r.AggregatedRating, r.ReviewCount, " +
@@ -76,14 +72,12 @@ public class RecipeServiceImpl implements RecipeService {
                     recipeId
             );
 
-            // 查询作者名
             String authorName = jdbcTemplate.queryForObject(
                     "SELECT AuthorName FROM users WHERE AuthorId = ?",
                     String.class,
                     ((Number) row.get("authorid")).longValue()
             );
 
-            // 查询配料
             List<String> ingredients = jdbcTemplate.queryForList(
                     "SELECT IngredientPart FROM recipe_ingredients WHERE RecipeId = ? ORDER BY IngredientPart",
                     String.class,
@@ -104,7 +98,6 @@ public class RecipeServiceImpl implements RecipeService {
             Object aggObj = row.get("aggregatedrating");
             recipe.setAggregatedRating(aggObj == null ? 0 : ((Number) aggObj).floatValue());
             recipe.setReviewCount(((Number) row.get("reviewcount")).intValue());
-            // 从 nutrition 表读取营养信息
             Object caloriesObj = row.get("calories");
             recipe.setCalories(caloriesObj == null ? 0.0f : ((Number) caloriesObj).floatValue());
             Object fatObj = row.get("fatcontent");
@@ -164,7 +157,6 @@ public class RecipeServiceImpl implements RecipeService {
             params.add(minRating);
         }
 
-        // 统计总数（使用 recipes 表）
         Long total = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM recipes r " + whereClause.toString(),
                 params.toArray(),
@@ -172,7 +164,6 @@ public class RecipeServiceImpl implements RecipeService {
         );
         if (total == null) total = 0L;
 
-        // 构建排序（calories_asc 需要从 nutrition 表排序）
         String orderBy = "ORDER BY r.RecipeId DESC";
         boolean needNutritionJoin = false;
         if (sort != null) {
@@ -190,7 +181,6 @@ public class RecipeServiceImpl implements RecipeService {
             }
         }
 
-        // 分页查询（从 recipes 和 nutrition 表 JOIN）
         int offset = (page - 1) * size;
         String fromClause = needNutritionJoin 
                 ? "FROM recipes r LEFT JOIN nutrition n ON r.RecipeId = n.RecipeId"
@@ -218,7 +208,6 @@ public class RecipeServiceImpl implements RecipeService {
             Object aggObj = rs.getObject("AggregatedRating");
             r.setAggregatedRating(aggObj == null ? 0 : ((Number) aggObj).floatValue());
             r.setReviewCount(rs.getInt("ReviewCount"));
-            // 从 nutrition 表读取营养信息
             Object caloriesObj = rs.getObject("Calories");
             r.setCalories(caloriesObj == null ? 0.0f : ((Number) caloriesObj).floatValue());
             Object fatObj = rs.getObject("FatContent");
@@ -240,7 +229,6 @@ public class RecipeServiceImpl implements RecipeService {
             Object servingsObj = rs.getObject("RecipeServings");
             r.setRecipeServings(servingsObj == null ? 0 : Integer.parseInt(servingsObj.toString()));
             r.setRecipeYield(rs.getString("RecipeYield"));
-            // 配料会在后面统一加载
             return r;
         });
 
@@ -256,7 +244,6 @@ public class RecipeServiceImpl implements RecipeService {
             } catch (EmptyResultDataAccessException e) {
                 r.setAuthorName(null);
             }
-            // 加载配料
             List<String> ingredients = jdbcTemplate.queryForList(
                     "SELECT IngredientPart FROM recipe_ingredients WHERE RecipeId = ? ORDER BY IngredientPart",
                     String.class,
@@ -282,13 +269,11 @@ public class RecipeServiceImpl implements RecipeService {
             throw new IllegalArgumentException("recipe name cannot be null or empty");
         }
 
-        // 生成新的 RecipeId
         Long newRecipeId = jdbcTemplate.queryForObject(
                 "SELECT COALESCE(MAX(RecipeId), 0) + 1 FROM recipes",
                 Long.class
         );
 
-        // 插入菜谱（不包含营养信息）
         jdbcTemplate.update(
                 "INSERT INTO recipes (RecipeId, Name, AuthorId, CookTime, PrepTime, TotalTime, " +
                         "DatePublished, Description, RecipeCategory, AggregatedRating, ReviewCount, " +
@@ -309,7 +294,6 @@ public class RecipeServiceImpl implements RecipeService {
                 dto.getRecipeYield()
         );
 
-        // 插入营养信息到 nutrition 表
         if (dto.getCalories() > 0) {
             jdbcTemplate.update(
                     "INSERT INTO nutrition (RecipeId, Calories, FatContent, SaturatedFatContent, " +
@@ -339,7 +323,6 @@ public class RecipeServiceImpl implements RecipeService {
             );
         }
 
-        // 插入配料
         if (dto.getRecipeIngredientParts() != null && dto.getRecipeIngredientParts().length > 0) {
             Set<String> uniqueIngredients = new HashSet<>();
             for (String ing : dto.getRecipeIngredientParts()) {
@@ -365,7 +348,6 @@ public class RecipeServiceImpl implements RecipeService {
     public void deleteRecipe(long recipeId, AuthInfo auth) {
         long operatorId = requireActiveUser(auth);
 
-        // 检查菜谱是否存在
         Long authorId = jdbcTemplate.queryForObject(
                 "SELECT AuthorId FROM recipes WHERE RecipeId = ?",
                 Long.class,
@@ -375,12 +357,10 @@ public class RecipeServiceImpl implements RecipeService {
             throw new IllegalArgumentException("recipe does not exist");
         }
 
-        // 检查权限
         if (authorId != operatorId) {
             throw new SecurityException("only recipe author can delete recipe");
         }
 
-        // 级联删除：先删依赖数据，再删菜谱（nutrition 表会通过外键 CASCADE 自动删除）
         jdbcTemplate.update("DELETE FROM review_likes WHERE ReviewId IN (SELECT ReviewId FROM reviews WHERE RecipeId = ?)", recipeId);
         jdbcTemplate.update("DELETE FROM reviews WHERE RecipeId = ?", recipeId);
         jdbcTemplate.update("DELETE FROM recipe_ingredients WHERE RecipeId = ?", recipeId);
@@ -393,7 +373,6 @@ public class RecipeServiceImpl implements RecipeService {
     public void updateTimes(AuthInfo auth, long recipeId, String cookTimeIso, String prepTimeIso) {
         long operatorId = requireActiveUser(auth);
 
-        // 检查菜谱是否存在且作者匹配
         Long authorId = jdbcTemplate.queryForObject(
                 "SELECT AuthorId FROM recipes WHERE RecipeId = ?",
                 Long.class,
@@ -406,7 +385,6 @@ public class RecipeServiceImpl implements RecipeService {
             throw new SecurityException("only recipe author can update times");
         }
 
-        // 解析 ISO 8601 时长
         Duration cookDuration = null;
         Duration prepDuration = null;
         if (cookTimeIso != null) {
@@ -430,7 +408,6 @@ public class RecipeServiceImpl implements RecipeService {
             }
         }
 
-        // 计算总时长
         Duration totalDuration = null;
         if (cookDuration != null || prepDuration != null) {
             long cookSeconds = cookDuration != null ? cookDuration.getSeconds() : 0;
@@ -438,7 +415,6 @@ public class RecipeServiceImpl implements RecipeService {
             totalDuration = Duration.ofSeconds(cookSeconds + prepSeconds);
         }
 
-        // 更新数据库（只更新非 null 的字段）
         if (cookTimeIso != null) {
             jdbcTemplate.update("UPDATE recipes SET CookTime = ? WHERE RecipeId = ?", cookTimeIso, recipeId);
         }
@@ -465,7 +441,6 @@ public class RecipeServiceImpl implements RecipeService {
 
     @Override
     public Map<String, Object> getClosestCaloriePair() {
-        // 先检查是否有至少两个菜谱有卡路里值（从 nutrition 表）
         Long count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM nutrition WHERE Calories IS NOT NULL",
                 Long.class
@@ -474,7 +449,6 @@ public class RecipeServiceImpl implements RecipeService {
             return null;
         }
 
-        // 使用 SQL 找出卡路里最接近的一对菜谱（从 nutrition 表）
         String sql = "WITH ranked_pairs AS (" +
                 "    SELECT " +
                 "        n1.RecipeId AS RecipeA, " +
@@ -497,7 +471,6 @@ public class RecipeServiceImpl implements RecipeService {
             if (row.isEmpty()) {
                 return null;
             }
-            // 确保返回的 key 符合接口要求（首字母大写），并确保数据类型正确
             Map<String, Object> result = new HashMap<>();
             Object recipeAObj = row.get("recipea");
             Object recipeBObj = row.get("recipeb");

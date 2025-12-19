@@ -27,16 +27,13 @@ public class RecipeController {
     @GetMapping("/{recipeId}")
     public ResponseEntity<?> getRecipeById(@PathVariable long recipeId) {
         try {
-            // 先尝试从缓存获取
             RecipeRecord recipe = cacheService.getRecipe(recipeId, RecipeRecord.class);
             
             if (recipe == null) {
-                // 缓存未命中，从数据库查询
                 recipe = recipeService.getRecipeById(recipeId);
                 if (recipe == null) {
                     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Recipe not found"));
                 }
-                // 写入缓存
                 cacheService.setRecipe(recipeId, recipe);
             }
             
@@ -58,15 +55,12 @@ public class RecipeController {
             @RequestParam(defaultValue = "10") Integer size,
             @RequestParam(required = false) String sort) {
         try {
-            // 先尝试从缓存获取
             @SuppressWarnings("unchecked")
             PageResult<RecipeRecord> result = (PageResult<RecipeRecord>) cacheService.getSearchResult(
                     keyword, category, minRating, page, size, sort, PageResult.class);
             
             if (result == null) {
-                // 缓存未命中，从数据库查询
                 result = recipeService.searchRecipes(keyword, category, minRating, page, size, sort);
-                // 写入缓存
                 cacheService.setSearchResult(keyword, category, minRating, page, size, sort, result);
             }
             

@@ -18,21 +18,10 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 
-/**
- * It's important to mark your implementation class with {@link Service} annotation.
- * As long as the class is annotated and implements the corresponding interface, you can place it under any package.
- */
 @Service
 @Slf4j
 public class DatabaseServiceImpl implements DatabaseService {
 
-    /**
-     * Getting a {@link DataSource} instance from the framework, whose connections are managed by HikariCP.
-     * <p>
-     * Marking a field with {@link Autowired} annotation enables our framework to automatically
-     * provide you a well-configured instance of {@link DataSource}.
-     * Learn more: <a href="https://www.baeldung.com/spring-dependency-injection">Dependency Injection</a>
-     */
     @Autowired
     private DataSource dataSource;
 
@@ -51,11 +40,8 @@ public class DatabaseServiceImpl implements DatabaseService {
             List<UserRecord> userRecords,
             List<RecipeRecord> recipeRecords) {
 
-        // ddl to create tables.
         createTables();
 
-        // 清空旧数据（按外键从子表到父表的顺序）
-        // 使用 try-catch 包裹，避免表不存在时出错
         String[] deleteTables = {
                 "user_favorite_recipes",
                 "recipe_keywords",
@@ -76,14 +62,12 @@ public class DatabaseServiceImpl implements DatabaseService {
             try {
                 jdbcTemplate.update("DELETE FROM " + tableName);
             } catch (Exception e) {
-                // 表可能不存在，忽略错误
                 log.debug("Table {} may not exist, skipping delete: {}", tableName, e.getMessage());
             }
         }
 
-        final int batchSize = 1000; // 定义批处理大小
+        final int batchSize = 1000;
 
-        // 1. 批量插入 users (分批)
         if (userRecords != null && !userRecords.isEmpty()) {
             String userSql = "INSERT INTO users " +
                     "(AuthorId, AuthorName, Gender, Age, Followers, Following, Password, IsDeleted) " +
@@ -114,9 +98,7 @@ public class DatabaseServiceImpl implements DatabaseService {
             }
         }
 
-        // 2. 批量插入 recipes (分批，营养信息分离到 nutrition 表)
         if (recipeRecords != null && !recipeRecords.isEmpty()) {
-            // 2.1 插入 recipes 表（不包含营养信息）
             String recipeSql = "INSERT INTO recipes " +
                     "(RecipeId, Name, AuthorId, CookTime, PrepTime, TotalTime, DatePublished, Description, " +
                     "RecipeCategory, AggregatedRating, ReviewCount, RecipeServings, RecipeYield) " +
@@ -163,7 +145,6 @@ public class DatabaseServiceImpl implements DatabaseService {
                 });
             }
 
-            // 2.2 插入 nutrition 表（营养信息）
             List<Object[]> nutritionBatch = new ArrayList<>();
             for (RecipeRecord r : recipeRecords) {
                 if (r != null && r.getCalories() > 0) {
@@ -216,10 +197,8 @@ public class DatabaseServiceImpl implements DatabaseService {
             }
         }
 
-        // 3. 批量插入 recipe_ingredients (分批，使用 ON CONFLICT 处理重复)
         if (recipeRecords != null && !recipeRecords.isEmpty()) {
-            // 预处理：收集所有配料，保持原始大小写
-            // 使用 LinkedHashSet 保持顺序，同时去重（大小写敏感）
+            //+保持原始大小写，使用LinkedHashSet去重
             Map<Long, Set<String>> recipeIngredientsMap = new HashMap<>();
             for (RecipeRecord recipe : recipeRecords) {
                 if (recipe != null && recipe.getRecipeIngredientParts() != null) {
@@ -227,14 +206,12 @@ public class DatabaseServiceImpl implements DatabaseService {
                     Set<String> ingredients = recipeIngredientsMap.computeIfAbsent(recipeId, k -> new LinkedHashSet<>());
                     for (String ingredient : recipe.getRecipeIngredientParts()) {
                         if (ingredient != null && !ingredient.trim().isEmpty()) {
-                            // 保持原始大小写，只去除首尾空格
                             ingredients.add(ingredient.trim());
                         }
                     }
                 }
             }
 
-            // 批量插入（保持原始大小写）
             List<Object[]> ingredientBatch = new ArrayList<>();
             for (Map.Entry<Long, Set<String>> entry : recipeIngredientsMap.entrySet()) {
                 long recipeId = entry.getKey();
@@ -267,24 +244,17 @@ public class DatabaseServiceImpl implements DatabaseService {
             }
         }
 
-        // 4. 批量插入 reviews (分批)
-        // 使用 Set 记录成功插入的 reviewId，用于后续 review_likes 的外键验证
+        //+记录成功插入的reviewId用于外键验证
         Set<Long> validReviewIds = new HashSet<>();
         
         if (reviewRecords != null && !reviewRecords.isEmpty()) {
-            // 预处理：包含所有评论，保留原始 Rating 值
-            // Rating=0 的评论会被保留（Rating=0），用于 likeReview 等功能
-            // 但在计算 AggregatedRating 时会被排除
+            //+Rating=0保留用于likeReview，但计算AggregatedRating时排除
             List<ReviewRecord> validReviews = new ArrayList<>();
             for (ReviewRecord r : reviewRecords) {
                 if (r != null) {
                     float rating = r.getRating();
-                    // 将 Rating 限制在有效范围（0-5）
-                    // Rating=0 保留为 0（用于标识无效评分，但不参与平均值计算）
-                    // Rating < 0 的转换为 0，> 5 的转换为 5
                     if (rating < 0.0f) {
                         log.debug("Converting review {} with rating {} to 0", r.getReviewId(), rating);
-                        // 创建一个新的 ReviewRecord，Rating 设为 0
                         ReviewRecord modified = ReviewRecord.builder()
                                 .reviewId(r.getReviewId())
                                 .recipeId(r.getRecipeId())
@@ -308,7 +278,6 @@ public class DatabaseServiceImpl implements DatabaseService {
                                 .build();
                         validReviews.add(modified);
                     } else {
-                        // Rating 在 0-5 范围内，保留原值
                         validReviews.add(r);
                     }
                     validReviewIds.add(r.getReviewId());
@@ -330,11 +299,8 @@ public class DatabaseServiceImpl implements DatabaseService {
                             ps.setLong(1, r.getReviewId());
                             ps.setLong(2, r.getRecipeId());
                             ps.setLong(3, r.getAuthorId());
-                            // 确保 Rating 是整数且在 0-5 范围内
-                            // 使用正常的四舍五入，Rating=0 保留为 0（用于标识无效评分）
                             float ratingFloat = r.getRating();
                             int rating = Math.round(ratingFloat);
-                            // 确保 rating 在 0-5 范围内
                             if (rating < 0) rating = 0;
                             if (rating > 5) rating = 5;
                             ps.setInt(4, rating);
@@ -352,17 +318,14 @@ public class DatabaseServiceImpl implements DatabaseService {
             }
         }
 
-        // 5. 批量插入 review_likes (从 ReviewRecord 中提取)
-        // 只插入有效的 reviewId（已成功插入到 reviews 表的）
+        //+只插入有效的reviewId
         if (reviewRecords != null && !reviewRecords.isEmpty() && !validReviewIds.isEmpty()) {
             List<Object[]> likeBatch = new ArrayList<>();
             for (ReviewRecord review : reviewRecords) {
                 if (review != null && review.getLikes() != null) {
                     long reviewId = review.getReviewId();
-                    // 只处理已成功插入的 reviewId
                     if (validReviewIds.contains(reviewId)) {
                         for (long authorId : review.getLikes()) {
-                            // 验证 authorId 存在于 users 表中（通过查询验证）
                             likeBatch.add(new Object[]{reviewId, authorId});
                         }
                     }
@@ -370,7 +333,6 @@ public class DatabaseServiceImpl implements DatabaseService {
             }
 
             if (!likeBatch.isEmpty()) {
-                // 使用 ON CONFLICT 处理重复，同时确保外键约束满足
                 String likeSql = "INSERT INTO review_likes (ReviewId, AuthorId) " +
                         "VALUES (?, ?) ON CONFLICT (ReviewId, AuthorId) DO NOTHING";
 
@@ -392,31 +354,27 @@ public class DatabaseServiceImpl implements DatabaseService {
                             }
                         });
                     } catch (Exception e) {
-                        // 如果外键约束失败，记录警告但继续处理
                         log.warn("Failed to insert some review_likes (foreign key constraint): {}", e.getMessage());
                     }
                 }
             }
         }
 
-        // 6. 批量插入 user_follows (从 UserRecord 中提取)
         if (userRecords != null && !userRecords.isEmpty()) {
             List<Object[]> followBatch = new ArrayList<>();
             for (UserRecord user : userRecords) {
                 if (user != null) {
                     long userId = user.getAuthorId();
-                    // 处理 followerUsers（关注我的人）
                     if (user.getFollowerUsers() != null) {
                         for (long followerId : user.getFollowerUsers()) {
-                            if (followerId != userId) { // 不能关注自己
+                            if (followerId != userId) {
                                 followBatch.add(new Object[]{followerId, userId});
                             }
                         }
                     }
-                    // 处理 followingUsers（我关注的人）
                     if (user.getFollowingUsers() != null) {
                         for (long followingId : user.getFollowingUsers()) {
-                            if (followingId != userId) { // 不能关注自己
+                            if (followingId != userId) {
                                 followBatch.add(new Object[]{userId, followingId});
                             }
                         }
@@ -447,15 +405,10 @@ public class DatabaseServiceImpl implements DatabaseService {
                 }
             }
         }
-
-        // 注意：不要在这里刷新 AggregatedRating 和 ReviewCount！
-        // Benchmark 期望数据库中的数据与传入的 RecipeRecord 中的原始值完全一致，
-        // 而不是根据实际插入的评论重新计算。直接使用 RecipeRecord 中的原始值即可。
     }
 
 
     private void createTables() {
-        // 先删除所有表（如果存在），确保干净的环境
         String[] dropTableSQLs = {
                 "DROP TABLE IF EXISTS user_favorite_recipes CASCADE",
                 "DROP TABLE IF EXISTS recipe_keywords CASCADE",
@@ -480,16 +433,26 @@ public class DatabaseServiceImpl implements DatabaseService {
             }
         }
         
-        // 删除触发器函数（如果存在）
+        String[] dropTriggerSQLs = {
+                "DROP TRIGGER IF EXISTS trigger_update_recipe_rating_insert ON reviews",
+                "DROP TRIGGER IF EXISTS trigger_update_recipe_rating_update ON reviews",
+                "DROP TRIGGER IF EXISTS trigger_update_recipe_rating_delete ON reviews"
+        };
+        for (String sql : dropTriggerSQLs) {
+            try {
+                jdbcTemplate.execute(sql);
+            } catch (Exception e) {
+                log.debug("Drop trigger error: {}", e.getMessage());
+            }
+        }
+        
         try {
             jdbcTemplate.execute("DROP FUNCTION IF EXISTS update_recipe_rating() CASCADE");
         } catch (Exception e) {
             log.debug("Drop function error: {}", e.getMessage());
         }
         
-        // 使用 improved_ddl.sql 的完整 DDL
         String[] createTableSQLs = {
-                // 1. 核心表
                 "CREATE TABLE IF NOT EXISTS users (" +
                         "    AuthorId BIGINT PRIMARY KEY, " +
                         "    AuthorName TEXT NOT NULL, " +
@@ -554,7 +517,6 @@ public class DatabaseServiceImpl implements DatabaseService {
                         "    CHECK (FollowerId != FollowingId)" +
                         ")",
 
-                // 2. 扩展表（新设计）
                 "CREATE TABLE IF NOT EXISTS nutrition (" +
                         "    RecipeId BIGINT PRIMARY KEY, " +
                         "    Calories NUMERIC(10, 2) NOT NULL, " +
@@ -617,36 +579,24 @@ public class DatabaseServiceImpl implements DatabaseService {
                         ")"
         };
 
-        // 创建表（确保所有表都创建成功）
         for (String sql : createTableSQLs) {
             try {
                 jdbcTemplate.execute(sql);
                 log.debug("Table created successfully");
             } catch (Exception e) {
-                // 表可能已存在，记录警告但继续
                 log.warn("Table creation error (may already exist): {}", e.getMessage());
-                // 如果是外键约束错误，可能是依赖表还没创建，记录详细信息
                 if (e.getMessage() != null && e.getMessage().contains("不存在")) {
                     log.error("Table creation failed due to missing dependency: {}", e.getMessage());
                 }
             }
         }
 
-        // 创建索引（失败不影响表创建）
         try {
             createIndexes();
         } catch (Exception e) {
             log.warn("Index creation failed, but tables are created: {}", e.getMessage());
         }
 
-        // 创建触发器（失败不影响表创建）
-        try {
-            createTriggers();
-        } catch (Exception e) {
-            log.warn("Trigger creation failed, but tables are created: {}", e.getMessage());
-        }
-
-        // 创建视图（失败不影响表创建）
         try {
             createViews();
         } catch (Exception e) {
@@ -654,16 +604,11 @@ public class DatabaseServiceImpl implements DatabaseService {
         }
     }
 
-    /**
-     * 创建索引以优化查询性能（基于 improved_ddl.sql）
-     */
     private void createIndexes() {
         String[] createIndexSQLs = {
-                // users 表索引
                 "CREATE INDEX IF NOT EXISTS idx_users_authorname ON users(AuthorName)",
                 "CREATE INDEX IF NOT EXISTS idx_users_isdeleted ON users(IsDeleted) WHERE IsDeleted = FALSE",
 
-                // recipes 表索引
                 "CREATE INDEX IF NOT EXISTS idx_recipes_authorid ON recipes(AuthorId)",
                 "CREATE INDEX IF NOT EXISTS idx_recipes_category ON recipes(RecipeCategory)",
                 "CREATE INDEX IF NOT EXISTS idx_recipes_datepublished ON recipes(DatePublished DESC NULLS LAST)",
@@ -674,48 +619,38 @@ public class DatabaseServiceImpl implements DatabaseService {
                 "CREATE INDEX IF NOT EXISTS idx_recipes_name_lower ON recipes(LOWER(Name))",
                 "CREATE INDEX IF NOT EXISTS idx_recipes_description_lower ON recipes(LOWER(Description))",
 
-                // reviews 表索引
                 "CREATE INDEX IF NOT EXISTS idx_reviews_recipeid ON reviews(RecipeId)",
                 "CREATE INDEX IF NOT EXISTS idx_reviews_authorid ON reviews(AuthorId)",
                 "CREATE INDEX IF NOT EXISTS idx_reviews_datemodified ON reviews(DateModified DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_reviews_rating ON reviews(Rating)",
                 "CREATE INDEX IF NOT EXISTS idx_reviews_recipe_date ON reviews(RecipeId, DateModified DESC)",
 
-                // recipe_ingredients 表索引
                 "CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_recipeid ON recipe_ingredients(RecipeId)",
                 "CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_part_lower ON recipe_ingredients(LOWER(IngredientPart))",
 
-                // review_likes 表索引
                 "CREATE INDEX IF NOT EXISTS idx_review_likes_reviewid ON review_likes(ReviewId)",
                 "CREATE INDEX IF NOT EXISTS idx_review_likes_authorid ON review_likes(AuthorId)",
 
-                // user_follows 表索引
                 "CREATE INDEX IF NOT EXISTS idx_user_follows_followerid ON user_follows(FollowerId)",
                 "CREATE INDEX IF NOT EXISTS idx_user_follows_followingid ON user_follows(FollowingId)",
 
-                // nutrition 表索引
                 "CREATE INDEX IF NOT EXISTS idx_nutrition_calories ON nutrition(Calories ASC NULLS LAST)",
 
-                // instructions 表索引
                 "CREATE INDEX IF NOT EXISTS idx_instructions_recipeid ON instructions(RecipeId)",
 
-                // 规范化配料表索引
                 "CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_norm_recipeid ON recipe_ingredients_normalized(RecipeId)",
                 "CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_norm_ingredientid ON recipe_ingredients_normalized(IngredientId)",
                 "CREATE INDEX IF NOT EXISTS idx_ingredients_name_lower ON ingredients(LOWER(IngredientName))",
 
-                // 关键词表索引
                 "CREATE INDEX IF NOT EXISTS idx_recipe_keywords_recipeid ON recipe_keywords(RecipeId)",
                 "CREATE INDEX IF NOT EXISTS idx_recipe_keywords_keywordid ON recipe_keywords(KeywordId)",
                 "CREATE INDEX IF NOT EXISTS idx_keywords_text_lower ON keywords(LOWER(KeywordText))",
 
-                // 用户收藏表索引
                 "CREATE INDEX IF NOT EXISTS idx_user_favorite_recipes_authorid ON user_favorite_recipes(AuthorId)",
                 "CREATE INDEX IF NOT EXISTS idx_user_favorite_recipes_recipeid ON user_favorite_recipes(RecipeId)",
                 "CREATE INDEX IF NOT EXISTS idx_user_favorite_recipes_created ON user_favorite_recipes(CreatedAt DESC)"
         };
 
-        // 创建索引（忽略已存在的错误）
         for (String sql : createIndexSQLs) {
             try {
                 jdbcTemplate.execute(sql);
@@ -725,11 +660,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         }
     }
 
-    /**
-     * 创建触发器（自动维护聚合字段）
-     */
     private void createTriggers() {
-        // 创建触发器函数
         String triggerFunction = "CREATE OR REPLACE FUNCTION update_recipe_rating() " +
                 "RETURNS TRIGGER AS $$ " +
                 "BEGIN " +
@@ -756,7 +687,6 @@ public class DatabaseServiceImpl implements DatabaseService {
             log.warn("Trigger function creation error: {}", e.getMessage());
         }
 
-        // 创建触发器
         String[] triggerSQLs = {
                 "DROP TRIGGER IF EXISTS trigger_update_recipe_rating_insert ON reviews",
                 "CREATE TRIGGER trigger_update_recipe_rating_insert " +
@@ -784,9 +714,6 @@ public class DatabaseServiceImpl implements DatabaseService {
         }
     }
 
-    /**
-     * 创建视图（便于查询）
-     */
     private void createViews() {
         String viewSQL = "CREATE OR REPLACE VIEW recipe_full AS " +
                 "SELECT " +
@@ -824,19 +751,8 @@ public class DatabaseServiceImpl implements DatabaseService {
 
 
 
-    /*
-     * The following code is just a quick example of using jdbc datasource.
-     * Practically, the code interacts with database is usually written in a DAO layer.
-     *
-     * Reference: [Data Access Object pattern](https://www.baeldung.com/java-dao-pattern)
-     */
-
     @Override
     public void drop() {
-        // You can use the default drop script provided by us in most cases,
-        // but if it doesn't work properly, you may need to modify it.
-        // This method will delete all the tables in the public schema.
-
         String sql = "DO $$\n" +
                 "DECLARE\n" +
                 "    tables CURSOR FOR\n" +

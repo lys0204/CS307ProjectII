@@ -31,14 +31,11 @@ public class ReviewController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String sort) {
         try {
-            // 先尝试从缓存获取
             @SuppressWarnings("unchecked")
             PageResult<ReviewRecord> result = (PageResult<ReviewRecord>) cacheService.getReviews(recipeId, page, size, sort, PageResult.class);
             
             if (result == null) {
-                // 缓存未命中，从数据库查询
                 result = reviewService.listByRecipe(recipeId, page, size, sort);
-                // 写入缓存
                 cacheService.setReviews(recipeId, page, size, sort, result);
             }
             
