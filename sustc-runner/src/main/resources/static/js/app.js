@@ -1,84 +1,32 @@
 // API 基础地址
 const API_BASE = 'http://localhost:8080/api';
 
-// 当前用户信息
-let currentUser = null;
 let currentCategory = '';
+let currentPage = 1;
+let currentPageSize = 20;
+let currentTotal = 0;
+let currentKeyword = '';
 
 /**
  * 页面加载时初始化
  */
 document.addEventListener('DOMContentLoaded', function() {
     loadFeed();
-    // 点击用户菜单显示登录模态框
-    document.querySelector('.user-menu').addEventListener('click', function() {
-        if (!currentUser) {
-            showLoginModal();
-        }
-    });
 });
 
-/**
- * 切换标签页（保留用于兼容）
- */
-function switchTab(tabName) {
-    // 可以在这里添加标签页切换逻辑
-    console.log('切换到标签页:', tabName);
-}
-
-/**
- * 显示登录模态框
- */
-function showLoginModal() {
-    document.getElementById('login-modal').style.display = 'block';
-}
-
-/**
- * 关闭模态框
- */
-function closeModal() {
-    document.getElementById('login-modal').style.display = 'none';
-}
-
-/**
- * 切换模态框标签
- */
-function switchModalTab(tab) {
-    const loginForm = document.getElementById('login-form');
-    const registerForm = document.getElementById('register-form');
-    const tabs = document.querySelectorAll('.modal-tab');
-    
-    tabs.forEach(t => t.classList.remove('active'));
-    
-    if (tab === 'login') {
-        loginForm.style.display = 'flex';
-        registerForm.style.display = 'none';
-        tabs[0].classList.add('active');
-    } else {
-        loginForm.style.display = 'none';
-        registerForm.style.display = 'flex';
-        tabs[1].classList.add('active');
-    }
-}
-
-/**
- * 显示上传模态框
- */
-function showUploadModal() {
-    if (!currentUser) {
-        showLoginModal();
-        return;
-    }
-    alert('投稿功能开发中...');
-}
 
 /**
  * 全局搜索
  */
 function globalSearch() {
-    const keyword = document.getElementById('global-search').value;
+    const keyword = document.getElementById('global-search').value.trim();
     if (keyword) {
         searchRecipes(keyword);
+    } else {
+        // 如果搜索框为空，清空搜索并重新加载
+        currentKeyword = '';
+        currentPage = 1;
+        loadRecipes();
     }
 }
 
@@ -87,7 +35,10 @@ function globalSearch() {
  */
 function filterByCategory(category) {
     currentCategory = category;
-    loadFeed();
+    currentPage = 1;
+    currentKeyword = '';
+    document.getElementById('global-search').value = '';
+    loadRecipes();
     // 更新分类标签状态
     document.querySelectorAll('.category-tag').forEach(tag => {
         tag.classList.remove('active');
@@ -99,31 +50,99 @@ function filterByCategory(category) {
  * 加载动态/推荐内容
  */
 async function loadFeed() {
+    currentPage = 1;
+    currentKeyword = '';
+    await loadRecipes();
+}
+
+/**
+ * 加载食谱列表
+ */
+async function loadRecipes() {
     const grid = document.getElementById('recipe-grid');
     const loading = document.getElementById('loading');
+    const pagination = document.getElementById('pagination');
     
     grid.innerHTML = '';
     loading.style.display = 'block';
     
     try {
-        // 如果没有登录，使用默认参数获取热门内容
         const params = new URLSearchParams({
-            page: '1',
-            size: '20',
-            ...(currentCategory && { category: currentCategory })
+            page: currentPage.toString(),
+            size: currentPageSize.toString(),
+            ...(currentCategory && { category: currentCategory }),
+            ...(currentKeyword && { keyword: currentKeyword })
         });
         
-        // 尝试获取热门食谱（不需要认证）
         const result = await apiCall(`${API_BASE}/recipes/search?${params}`);
         
         if (result && result.items) {
             renderRecipeGrid(result.items);
+            currentTotal = result.total || 0;
+            updatePagination();
         }
     } catch (error) {
         console.error('加载失败:', error);
         grid.innerHTML = '<div style="text-align: center; padding: 40px; color: #999;">加载失败，请稍后重试</div>';
     } finally {
         loading.style.display = 'none';
+    }
+}
+
+/**
+ * 更新分页控件
+ */
+function updatePagination() {
+    const pagination = document.getElementById('pagination');
+    const pageInfo = document.getElementById('page-info');
+    const prevBtn = document.getElementById('prev-page');
+    const nextBtn = document.getElementById('next-page');
+    
+    if (!pagination || !pageInfo || !prevBtn || !nextBtn) {
+        return;
+    }
+    
+    const totalPages = Math.ceil(currentTotal / currentPageSize);
+    
+    if (totalPages <= 1 || currentTotal === 0) {
+        pagination.style.display = 'none';
+        return;
+    }
+    
+    pagination.style.display = 'flex';
+    pageInfo.textContent = `第 ${currentPage} 页 / 共 ${totalPages} 页`;
+    
+    prevBtn.disabled = currentPage <= 1;
+    nextBtn.disabled = currentPage >= totalPages;
+    
+    if (prevBtn.disabled) {
+        prevBtn.style.opacity = '0.5';
+        prevBtn.style.cursor = 'not-allowed';
+    } else {
+        prevBtn.style.opacity = '1';
+        prevBtn.style.cursor = 'pointer';
+    }
+    
+    if (nextBtn.disabled) {
+        nextBtn.style.opacity = '0.5';
+        nextBtn.style.cursor = 'not-allowed';
+    } else {
+        nextBtn.style.opacity = '1';
+        nextBtn.style.cursor = 'pointer';
+    }
+}
+
+/**
+ * 切换页码
+ */
+function changePage(delta) {
+    const totalPages = Math.ceil(currentTotal / currentPageSize);
+    const newPage = currentPage + delta;
+    
+    if (newPage >= 1 && newPage <= totalPages) {
+        currentPage = newPage;
+        loadRecipes();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 }
 
@@ -142,7 +161,6 @@ function renderRecipeGrid(recipes) {
         <div class="recipe-card" onclick="viewRecipe(${recipe.recipeId})">
             <div class="recipe-thumbnail">
                 🍳
-                ${recipe.cookTime ? `<span class="recipe-duration">${formatDuration(recipe.cookTime)}</span>` : ''}
             </div>
             <div class="recipe-info">
                 <div class="recipe-title">${recipe.name || '未命名食谱'}</div>
@@ -159,34 +177,104 @@ function renderRecipeGrid(recipes) {
 }
 
 /**
- * 格式化时长
+ * 查看食谱详情
  */
-function formatDuration(duration) {
-    if (!duration) return '';
-    // 处理 ISO 8601 格式的时长，如 PT30M
-    const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
-    if (match) {
-        const hours = match[1] || 0;
-        const minutes = match[2] || 0;
-        if (hours > 0) {
-            return `${hours}:${minutes.toString().padStart(2, '0')}`;
+let scrollPosition = 0;
+
+async function viewRecipe(recipeId) {
+    const modal = document.getElementById('recipe-modal');
+    const detailDiv = document.getElementById('recipe-detail');
+    
+    scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+    document.body.classList.add('modal-open');
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollPosition}px`;
+    document.body.style.width = '100%';
+    
+    modal.style.display = 'block';
+    detailDiv.innerHTML = '<div style="text-align: center; padding: 20px;">加载中...</div>';
+    
+    try {
+        const [recipe, reviews] = await Promise.all([
+            apiCall(`${API_BASE}/recipes/${recipeId}`),
+            apiCall(`${API_BASE}/reviews/recipe/${recipeId}?page=1&size=10`)
+        ]);
+        
+        let reviewsHtml = '';
+        if (reviews && reviews.items && reviews.items.length > 0) {
+            reviewsHtml = reviews.items.map(review => `
+                <div class="review-item">
+                    <div class="review-header">
+                        <span class="review-author">${review.authorName || '匿名'}</span>
+                        <span class="review-rating">⭐ ${review.rating || 0}</span>
+                        <span class="review-date">${formatDate(review.dateModified || review.dateSubmitted)}</span>
+                    </div>
+                    <div class="review-content">${escapeHtml(review.review || '无评论内容')}</div>
+                </div>
+            `).join('');
+        } else {
+            reviewsHtml = '<div style="text-align: center; padding: 20px; color: #999;">暂无评论</div>';
         }
-        return `${minutes}分钟`;
+        
+        detailDiv.innerHTML = `
+            <div class="recipe-detail-header">
+                <h2>${recipe.name || '未命名食谱'}</h2>
+                <div class="recipe-detail-rating">
+                    ${recipe.aggregatedRating ? `<span class="rating-badge">⭐ ${recipe.aggregatedRating.toFixed(1)}</span>` : '<span class="rating-badge">暂无评分</span>'}
+                    <span class="review-count-badge">💬 ${recipe.reviewCount || 0} 条评论</span>
+                </div>
+            </div>
+            <div class="recipe-detail-meta">
+                <div class="meta-item"><strong>作者：</strong><span>${recipe.authorName || '未知'}</span></div>
+                <div class="meta-item"><strong>分类：</strong><span>${recipe.recipeCategory || '未分类'}</span></div>
+            </div>
+            <div class="recipe-description">
+                <h3>📝 简介</h3>
+                <div class="description-content">${recipe.description ? escapeHtml(recipe.description) : '<p style="color: #999;">暂无描述</p>'}</div>
+            </div>
+            <div class="recipe-reviews">
+                <h3>💬 评论 (${reviews?.total || 0})</h3>
+                <div class="reviews-list">
+                    ${reviewsHtml}
+                </div>
+            </div>
+        `;
+    } catch (error) {
+        detailDiv.innerHTML = `<div style="text-align: center; padding: 20px; color: #f00;">获取详情失败: ${error.message}</div>`;
     }
-    return duration;
 }
 
 /**
- * 查看食谱详情
+ * 关闭食谱详情模态框
  */
-async function viewRecipe(recipeId) {
-    try {
-        const recipe = await apiCall(`${API_BASE}/recipes/${recipeId}`);
-        // 可以打开详情页或显示详情模态框
-        alert(`食谱: ${recipe.name}\n作者: ${recipe.authorName}\n评分: ${recipe.aggregatedRating || '暂无'}\n描述: ${recipe.description || '无描述'}`);
-    } catch (error) {
-        alert('获取食谱详情失败: ' + error.message);
-    }
+function closeRecipeModal() {
+    document.getElementById('recipe-modal').style.display = 'none';
+    document.body.classList.remove('modal-open');
+    document.body.style.overflow = '';
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.width = '';
+    window.scrollTo(0, scrollPosition);
+}
+
+/**
+ * 格式化日期
+ */
+function formatDate(dateStr) {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    return date.toLocaleString('zh-CN');
+}
+
+/**
+ * 转义HTML，防止XSS
+ */
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML.replace(/\n/g, '<br>');
 }
 
 /**
@@ -215,216 +303,44 @@ async function apiCall(url, method = 'GET', body = null) {
 }
 
 /**
- * 用户注册
- */
-async function register() {
-    try {
-        const username = document.getElementById('reg-username').value;
-        const password = document.getElementById('reg-password').value;
-        const genderValue = document.getElementById('reg-gender').value;
-        const age = parseInt(document.getElementById('reg-age').value);
-        
-        // 验证必填字段
-        if (!username || !password || !genderValue || !age || age <= 0) {
-            alert('请填写完整的注册信息');
-            return;
-        }
-        
-        // 转换性别：M -> MALE, F -> FEMALE, O -> UNKNOWN
-        let genderEnum;
-        if (genderValue === 'M') {
-            genderEnum = 'MALE';
-        } else if (genderValue === 'F') {
-            genderEnum = 'FEMALE';
-        } else {
-            genderEnum = 'UNKNOWN';
-        }
-        
-        // 计算生日（从年龄反推，使用当前日期减去年龄）
-        const today = new Date();
-        const birthYear = today.getFullYear() - age;
-        const birthday = `${birthYear}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-        
-        const req = {
-            name: username,
-            password: password,
-            gender: genderEnum,
-            birthday: birthday
-        };
-        
-        const result = await apiCall(`${API_BASE}/users/register`, 'POST', req);
-        if (result.userId) {
-            alert('注册成功！用户ID: ' + result.userId);
-            closeModal();
-            // 可以自动登录
-            document.getElementById('login-id').value = result.userId;
-            document.getElementById('login-password').value = password;
-            login();
-        }
-    } catch (error) {
-        alert('注册失败: ' + error.message);
-    }
-}
-
-/**
- * 用户登录
- */
-async function login() {
-    try {
-        const auth = {
-            authorId: parseInt(document.getElementById('login-id').value),
-            password: document.getElementById('login-password').value
-        };
-        const result = await apiCall(`${API_BASE}/users/login`, 'POST', auth);
-        if (result.userId) {
-            currentUser = { id: result.userId, ...auth };
-            document.getElementById('current-user').textContent = '用户 ' + result.userId;
-            closeModal();
-            // 重新加载内容
-            loadFeed();
-        }
-    } catch (error) {
-        alert('登录失败: ' + error.message);
-    }
-}
-
-/**
  * 搜索食谱
  */
 async function searchRecipes(keyword = null) {
     const searchKeyword = keyword || document.getElementById('global-search')?.value;
-    if (!searchKeyword) return;
+    currentKeyword = searchKeyword || '';
+    currentPage = 1;
+    currentCategory = '';
     
-    const grid = document.getElementById('recipe-grid');
-    const loading = document.getElementById('loading');
+    // 更新分类标签状态
+    document.querySelectorAll('.category-tag').forEach(tag => {
+        tag.classList.remove('active');
+    });
+    document.querySelectorAll('.category-tag')[0].classList.add('active');
     
-    grid.innerHTML = '';
-    loading.style.display = 'block';
-    
-    try {
-        const params = new URLSearchParams({
-            page: '1',
-            size: '20',
-            keyword: searchKeyword
-        });
-        const result = await apiCall(`${API_BASE}/recipes/search?${params}`);
-        if (result && result.items) {
-            renderRecipeGrid(result.items);
-        }
-    } catch (error) {
-        console.error('搜索失败:', error);
-        grid.innerHTML = '<div style="text-align: center; padding: 40px; color: #999;">搜索失败</div>';
-    } finally {
-        loading.style.display = 'none';
-    }
+    await loadRecipes();
 }
 
-/**
- * 获取用户信息
- */
-async function getUser() {
-    try {
-        const userId = document.getElementById('get-user-id').value;
-        const result = await apiCall(`${API_BASE}/users/${userId}`);
-        showResult('user-result', result);
-    } catch (error) {
-        showResult('user-result', { error: error.message }, true);
-    }
-}
-
-/**
- * 获取用户动态
- */
-async function getFeed() {
-    if (!currentUser) {
-        alert('请先登录');
-        return;
-    }
-    
-    try {
-        const category = document.getElementById('feed-category')?.value || '';
-        const params = new URLSearchParams({
-            page: '1',
-            size: '20',
-            ...(category && { category })
-        });
-        const result = await apiCall(`${API_BASE}/users/feed?${params}`, 'POST', {
-            authorId: currentUser.id,
-            password: currentUser.password
-        });
-        if (result && result.items) {
-            renderRecipeGrid(result.items);
-        }
-    } catch (error) {
-        alert('获取动态失败: ' + error.message);
-    }
-}
-
-/**
- * 添加评论
- */
-async function addReview() {
-    if (!currentUser) {
-        alert('请先登录');
-        return;
-    }
-    
-    try {
-        const req = {
-            authorId: currentUser.id,
-            password: currentUser.password,
-            recipeId: parseInt(document.getElementById('review-recipe-id').value),
-            rating: parseInt(document.getElementById('review-rating').value),
-            review: document.getElementById('review-content').value
-        };
-        const result = await apiCall(`${API_BASE}/reviews`, 'POST', req);
-        alert('评论添加成功！');
-        document.getElementById('review-content').value = '';
-    } catch (error) {
-        alert('添加评论失败: ' + error.message);
-    }
-}
-
-/**
- * 获取食谱评论列表
- */
-async function listReviews() {
-    try {
-        const recipeId = document.getElementById('list-recipe-id').value;
-        const params = new URLSearchParams({
-            page: '1',
-            size: '10'
-        });
-        const result = await apiCall(`${API_BASE}/reviews/recipe/${recipeId}?${params}`);
-        showResult('review-result', result);
-    } catch (error) {
-        showResult('review-result', { error: error.message }, true);
-    }
-}
-
-/**
- * 显示结果（用于调试）
- */
-function showResult(elementId, data, isError = false) {
-    const element = document.getElementById(elementId);
-    if (element) {
-        element.style.display = 'block';
-        element.className = 'result ' + (isError ? 'error' : 'success');
-        element.textContent = JSON.stringify(data, null, 2);
-    }
-}
-
-// 点击模态框外部关闭
-window.onclick = function(event) {
-    const modal = document.getElementById('login-modal');
-    if (event.target === modal) {
-        closeModal();
-    }
-}
 
 // 回车键搜索
 document.addEventListener('keypress', function(e) {
     if (e.key === 'Enter' && e.target.id === 'global-search') {
         globalSearch();
+    }
+});
+
+// 点击模态框外部关闭
+window.onclick = function(event) {
+    const modal = document.getElementById('recipe-modal');
+    if (event.target === modal) {
+        closeRecipeModal();
+    }
+}
+
+// 阻止模态框内容区域的点击事件冒泡
+document.addEventListener('click', function(event) {
+    const modal = document.getElementById('recipe-modal');
+    const modalContent = modal?.querySelector('.modal-content');
+    if (modal && modalContent && event.target.closest('.modal-content') && event.target !== modal) {
+        event.stopPropagation();
     }
 });

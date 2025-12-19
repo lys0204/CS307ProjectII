@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SUSTC - 食谱网站</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=2">
 </head>
 <body>
     <!-- 顶部导航栏 -->
@@ -20,10 +20,6 @@
                 </div>
             </div>
             <div class="header-right">
-                <div class="user-menu" onclick="showLoginModal()">
-                    <span class="user-avatar">👤</span>
-                    <span class="user-name" id="current-user">未登录</span>
-                </div>
             </div>
         </div>
     </header>
@@ -51,45 +47,31 @@
                 <div class="content-section">
                     <div class="section-header">
                         <h2 class="section-title">推荐食谱</h2>
-                        <button class="btn-refresh" onclick="loadFeed()">换一换</button>
                     </div>
                     <div id="recipe-grid" class="recipe-grid">
                         <!-- 食谱卡片将通过 JS 动态生成 -->
                     </div>
                     <div id="loading" class="loading" style="display: none;">加载中...</div>
+                    <div id="pagination" class="pagination" style="display: none;">
+                        <button id="prev-page" onclick="changePage(-1)">上一页</button>
+                        <span id="page-info">第 1 页 / 共 1 页</span>
+                        <button id="next-page" onclick="changePage(1)">下一页</button>
+                    </div>
                 </div>
             </div>
         </div>
     </main>
 
-    <!-- 登录/注册模态框 -->
-    <div id="login-modal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <span class="close" onclick="closeModal()">&times;</span>
-            <h2>登录 / 注册</h2>
-            <div class="modal-tabs">
-                <button class="modal-tab active" onclick="switchModalTab('login')">登录</button>
-                <button class="modal-tab" onclick="switchModalTab('register')">注册</button>
-            </div>
-            <div id="login-form" class="modal-form">
-                <input type="number" id="login-id" placeholder="用户ID" class="modal-input">
-                <input type="password" id="login-password" placeholder="密码" class="modal-input">
-                <button class="modal-btn" onclick="login()">登录</button>
-            </div>
-            <div id="register-form" class="modal-form" style="display: none;">
-                <input type="text" id="reg-username" placeholder="用户名" class="modal-input">
-                <input type="password" id="reg-password" placeholder="密码" class="modal-input">
-                <select id="reg-gender" class="modal-input">
-                    <option value="M">男</option>
-                    <option value="F">女</option>
-                    <option value="O">其他</option>
-                </select>
-                <input type="number" id="reg-age" placeholder="年龄" class="modal-input">
-                <button class="modal-btn" onclick="register()">注册</button>
+    <!-- 食谱详情模态框 -->
+    <div id="recipe-modal" class="modal" style="display: none;">
+        <div class="modal-content modal-large">
+            <span class="close" onclick="closeRecipeModal()">&times;</span>
+            <div id="recipe-detail">
+                <!-- 详情内容将通过 JS 动态生成 -->
             </div>
         </div>
     </div>
 
-    <script src="js/app.js"></script>
+    <script src="js/app.js?v=2"></script>
 </body>
 </html>
