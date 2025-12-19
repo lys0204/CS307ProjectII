@@ -2,68 +2,490 @@ package io.sustc.service.impl;
 
 import io.sustc.dto.*;
 import io.sustc.service.RecipeService;
-import io.sustc.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
-import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
+import org.springframework.transaction.annotation.Transactional;
 
-import javax.sql.DataSource;
-import java.sql.*;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.format.DateTimeParseException;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @Slf4j
 public class RecipeServiceImpl implements RecipeService {
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    /**
+     * 校验 auth 对应的用户是否存在且未被软删除，返回用户 ID
+     */
+    private long requireActiveUser(AuthInfo auth) {
+        if (auth == null) {
+            throw new SecurityException("auth is null");
+        }
+        long userId = auth.getAuthorId();
+        try {
+            Boolean isDeleted = jdbcTemplate.queryForObject(
+                    "SELECT IsDeleted FROM users WHERE AuthorId = ?",
+                    Boolean.class,
+                    userId
+            );
+            if (isDeleted == null || isDeleted) {
+                throw new SecurityException("user is inactive");
+            }
+            return userId;
+        } catch (EmptyResultDataAccessException e) {
+            throw new SecurityException("user does not exist", e);
+        }
+    }
 
     @Override
     public String getNameFromID(long id) {
-        return null;
+        try {
+            return jdbcTemplate.queryForObject(
+                    "SELECT Name FROM recipes WHERE RecipeId = ?",
+                    String.class,
+                    id
+            );
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
     }
 
     @Override
     public RecipeRecord getRecipeById(long recipeId) {
-        return null;
-    }
+        if (recipeId <= 0) {
+            throw new IllegalArgumentException("recipeId must be positive");
+        }
+        try {
+            // 查询菜谱基本信息
+            Map<String, Object> row = jdbcTemplate.queryForMap(
+                    "SELECT RecipeId, Name, AuthorId, CookTime, PrepTime, TotalTime, " +
+                            "DatePublished, Description, RecipeCategory, AggregatedRating, ReviewCount, " +
+                            "Calories, FatContent, SaturatedFatContent, CholesterolContent, SodiumContent, " +
+                            "CarbohydrateContent, FiberContent, SugarContent, ProteinContent, " +
+                            "RecipeServings, RecipeYield " +
+                            "FROM recipes WHERE RecipeId = ?",
+                    recipeId
+            );
 
+            // 查询作者名
+            String authorName = jdbcTemplate.queryForObject(
+                    "SELECT AuthorName FROM users WHERE AuthorId = ?",
+                    String.class,
+                    ((Number) row.get("authorid")).longValue()
+            );
+
+            // 查询配料
+            List<String> ingredients = jdbcTemplate.queryForList(
+                    "SELECT IngredientPart FROM recipe_ingredients WHERE RecipeId = ? ORDER BY IngredientPart",
+                    String.class,
+                    recipeId
+            );
+
+            RecipeRecord recipe = new RecipeRecord();
+            recipe.setRecipeId(((Number) row.get("recipeid")).longValue());
+            recipe.setName((String) row.get("name"));
+            recipe.setAuthorId(((Number) row.get("authorid")).longValue());
+            recipe.setAuthorName(authorName);
+            recipe.setCookTime((String) row.get("cooktime"));
+            recipe.setPrepTime((String) row.get("preptime"));
+            recipe.setTotalTime((String) row.get("totaltime"));
+            recipe.setDatePublished((Timestamp) row.get("datepublished"));
+            recipe.setDescription((String) row.get("description"));
+            recipe.setRecipeCategory((String) row.get("recipecategory"));
+            Object aggObj = row.get("aggregatedrating");
+            recipe.setAggregatedRating(aggObj == null ? 0 : ((Number) aggObj).floatValue());
+            recipe.setReviewCount(((Number) row.get("reviewcount")).intValue());
+            recipe.setCalories(((Number) row.get("calories")).floatValue());
+            recipe.setFatContent(((Number) row.get("fatcontent")).floatValue());
+            recipe.setSaturatedFatContent(((Number) row.get("saturatedfatcontent")).floatValue());
+            recipe.setCholesterolContent(((Number) row.get("cholesterolcontent")).floatValue());
+            recipe.setSodiumContent(((Number) row.get("sodiumcontent")).floatValue());
+            recipe.setCarbohydrateContent(((Number) row.get("carbohydratecontent")).floatValue());
+            recipe.setFiberContent(((Number) row.get("fibercontent")).floatValue());
+            recipe.setSugarContent(((Number) row.get("sugarcontent")).floatValue());
+            recipe.setProteinContent(((Number) row.get("proteincontent")).floatValue());
+            Object servingsObj = row.get("recipeservings");
+            recipe.setRecipeServings(servingsObj == null ? 0 : Integer.parseInt(servingsObj.toString()));
+            recipe.setRecipeYield((String) row.get("recipeyield"));
+            recipe.setRecipeIngredientParts(ingredients.toArray(new String[0]));
+
+            return recipe;
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
+    }
 
     @Override
     public PageResult<RecipeRecord> searchRecipes(String keyword, String category, Double minRating,
                                                   Integer page, Integer size, String sort) {
-        return null;
+        if (page == null || page < 1) {
+            throw new IllegalArgumentException("page must be >= 1");
+        }
+        if (size == null || size <= 0) {
+            throw new IllegalArgumentException("size must be > 0");
+        }
+
+        List<Object> params = new ArrayList<>();
+        StringBuilder whereClause = new StringBuilder("WHERE 1=1");
+
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            whereClause.append(" AND (LOWER(Name) LIKE ? OR LOWER(Description) LIKE ?)");
+            String keywordPattern = "%" + keyword.toLowerCase() + "%";
+            params.add(keywordPattern);
+            params.add(keywordPattern);
+        }
+
+        if (category != null && !category.trim().isEmpty()) {
+            whereClause.append(" AND RecipeCategory = ?");
+            params.add(category);
+        }
+
+        if (minRating != null) {
+            whereClause.append(" AND AggregatedRating >= ?");
+            params.add(minRating);
+        }
+
+        // 统计总数
+        Long total = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM recipes " + whereClause.toString(),
+                params.toArray(),
+                Long.class
+        );
+        if (total == null) total = 0L;
+
+        // 构建排序
+        String orderBy = "ORDER BY RecipeId DESC";
+        if (sort != null) {
+            switch (sort) {
+                case "rating_desc":
+                    orderBy = "ORDER BY AggregatedRating DESC NULLS LAST, RecipeId DESC";
+                    break;
+                case "date_desc":
+                    orderBy = "ORDER BY DatePublished DESC NULLS LAST, RecipeId DESC";
+                    break;
+                case "calories_asc":
+                    orderBy = "ORDER BY Calories ASC NULLS LAST, RecipeId ASC";
+                    break;
+            }
+        }
+
+        // 分页查询
+        int offset = (page - 1) * size;
+        String sql = "SELECT RecipeId, Name, AuthorId, CookTime, PrepTime, TotalTime, " +
+                "DatePublished, Description, RecipeCategory, AggregatedRating, ReviewCount, " +
+                "Calories, FatContent, SaturatedFatContent, CholesterolContent, SodiumContent, " +
+                "CarbohydrateContent, FiberContent, SugarContent, ProteinContent, " +
+                "RecipeServings, RecipeYield " +
+                "FROM recipes " + whereClause.toString() + " " + orderBy + " LIMIT ? OFFSET ?";
+        params.add(size);
+        params.add(offset);
+
+        List<RecipeRecord> recipes = jdbcTemplate.query(sql, params.toArray(), (rs, rowNum) -> {
+            RecipeRecord r = new RecipeRecord();
+            r.setRecipeId(rs.getLong("RecipeId"));
+            r.setName(rs.getString("Name"));
+            r.setAuthorId(rs.getLong("AuthorId"));
+            r.setCookTime(rs.getString("CookTime"));
+            r.setPrepTime(rs.getString("PrepTime"));
+            r.setTotalTime(rs.getString("TotalTime"));
+            r.setDatePublished(rs.getTimestamp("DatePublished"));
+            r.setDescription(rs.getString("Description"));
+            r.setRecipeCategory(rs.getString("RecipeCategory"));
+            Object aggObj = rs.getObject("AggregatedRating");
+            r.setAggregatedRating(aggObj == null ? 0 : ((Number) aggObj).floatValue());
+            r.setReviewCount(rs.getInt("ReviewCount"));
+            r.setCalories(rs.getFloat("Calories"));
+            r.setFatContent(rs.getFloat("FatContent"));
+            r.setSaturatedFatContent(rs.getFloat("SaturatedFatContent"));
+            r.setCholesterolContent(rs.getFloat("CholesterolContent"));
+            r.setSodiumContent(rs.getFloat("SodiumContent"));
+            r.setCarbohydrateContent(rs.getFloat("CarbohydrateContent"));
+            r.setFiberContent(rs.getFloat("FiberContent"));
+            r.setSugarContent(rs.getFloat("SugarContent"));
+            r.setProteinContent(rs.getFloat("ProteinContent"));
+            Object servingsObj = rs.getObject("RecipeServings");
+            r.setRecipeServings(servingsObj == null ? 0 : Integer.parseInt(servingsObj.toString()));
+            r.setRecipeYield(rs.getString("RecipeYield"));
+            // 配料会在后面统一加载
+            return r;
+        });
+
+        // 填充作者名和配料（完整数据）
+        for (RecipeRecord r : recipes) {
+            try {
+                String authorName = jdbcTemplate.queryForObject(
+                        "SELECT AuthorName FROM users WHERE AuthorId = ?",
+                        String.class,
+                        r.getAuthorId()
+                );
+                r.setAuthorName(authorName);
+            } catch (EmptyResultDataAccessException e) {
+                r.setAuthorName(null);
+            }
+            // 加载配料
+            List<String> ingredients = jdbcTemplate.queryForList(
+                    "SELECT IngredientPart FROM recipe_ingredients WHERE RecipeId = ? ORDER BY IngredientPart",
+                    String.class,
+                    r.getRecipeId()
+            );
+            r.setRecipeIngredientParts(ingredients.toArray(new String[0]));
+        }
+
+        PageResult<RecipeRecord> result = new PageResult<>();
+        result.setItems(recipes);
+        result.setPage(page);
+        result.setSize(size);
+        result.setTotal(total);
+        return result;
     }
 
     @Override
+    @Transactional
     public long createRecipe(RecipeRecord dto, AuthInfo auth) {
-        return 0;
+        long authorId = requireActiveUser(auth);
+
+        if (dto == null || dto.getName() == null || dto.getName().trim().isEmpty()) {
+            throw new IllegalArgumentException("recipe name cannot be null or empty");
+        }
+
+        // 生成新的 RecipeId
+        Long newRecipeId = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(MAX(RecipeId), 0) + 1 FROM recipes",
+                Long.class
+        );
+
+        // 插入菜谱
+        jdbcTemplate.update(
+                "INSERT INTO recipes (RecipeId, Name, AuthorId, CookTime, PrepTime, TotalTime, " +
+                        "DatePublished, Description, RecipeCategory, AggregatedRating, ReviewCount, " +
+                        "Calories, FatContent, SaturatedFatContent, CholesterolContent, SodiumContent, " +
+                        "CarbohydrateContent, FiberContent, SugarContent, ProteinContent, " +
+                        "RecipeServings, RecipeYield) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                newRecipeId,
+                dto.getName().trim(),
+                authorId,
+                dto.getCookTime(),
+                dto.getPrepTime(),
+                dto.getTotalTime(),
+                dto.getDatePublished() != null ? dto.getDatePublished() : new Timestamp(System.currentTimeMillis()),
+                dto.getDescription(),
+                dto.getRecipeCategory(),
+                dto.getAggregatedRating(),
+                dto.getReviewCount(),
+                dto.getCalories(),
+                dto.getFatContent(),
+                dto.getSaturatedFatContent(),
+                dto.getCholesterolContent(),
+                dto.getSodiumContent(),
+                dto.getCarbohydrateContent(),
+                dto.getFiberContent(),
+                dto.getSugarContent(),
+                dto.getProteinContent(),
+                dto.getRecipeServings(),
+                dto.getRecipeYield()
+        );
+
+        // 插入配料
+        if (dto.getRecipeIngredientParts() != null && dto.getRecipeIngredientParts().length > 0) {
+            Set<String> uniqueIngredients = new HashSet<>();
+            for (String ing : dto.getRecipeIngredientParts()) {
+                if (ing != null && !ing.trim().isEmpty()) {
+                    uniqueIngredients.add(ing.trim());
+                }
+            }
+            for (String ing : uniqueIngredients) {
+                jdbcTemplate.update(
+                        "INSERT INTO recipe_ingredients (RecipeId, IngredientPart) VALUES (?, ?) " +
+                                "ON CONFLICT (RecipeId, IngredientPart) DO NOTHING",
+                        newRecipeId,
+                        ing
+                );
+            }
+        }
+
+        return newRecipeId;
     }
 
     @Override
+    @Transactional
     public void deleteRecipe(long recipeId, AuthInfo auth) {
+        long operatorId = requireActiveUser(auth);
 
+        // 检查菜谱是否存在
+        Long authorId = jdbcTemplate.queryForObject(
+                "SELECT AuthorId FROM recipes WHERE RecipeId = ?",
+                Long.class,
+                recipeId
+        );
+        if (authorId == null) {
+            throw new IllegalArgumentException("recipe does not exist");
+        }
+
+        // 检查权限
+        if (authorId != operatorId) {
+            throw new SecurityException("only recipe author can delete recipe");
+        }
+
+        // 级联删除：先删依赖数据，再删菜谱
+        jdbcTemplate.update("DELETE FROM review_likes WHERE ReviewId IN (SELECT ReviewId FROM reviews WHERE RecipeId = ?)", recipeId);
+        jdbcTemplate.update("DELETE FROM reviews WHERE RecipeId = ?", recipeId);
+        jdbcTemplate.update("DELETE FROM recipe_ingredients WHERE RecipeId = ?", recipeId);
+        jdbcTemplate.update("DELETE FROM recipes WHERE RecipeId = ?", recipeId);
     }
 
     @Override
+    @Transactional
     public void updateTimes(AuthInfo auth, long recipeId, String cookTimeIso, String prepTimeIso) {
+        long operatorId = requireActiveUser(auth);
+
+        // 检查菜谱是否存在且作者匹配
+        Long authorId = jdbcTemplate.queryForObject(
+                "SELECT AuthorId FROM recipes WHERE RecipeId = ?",
+                Long.class,
+                recipeId
+        );
+        if (authorId == null) {
+            throw new IllegalArgumentException("recipe does not exist");
+        }
+        if (authorId != operatorId) {
+            throw new SecurityException("only recipe author can update times");
+        }
+
+        // 解析 ISO 8601 时长
+        Duration cookDuration = null;
+        Duration prepDuration = null;
+        if (cookTimeIso != null) {
+            try {
+                cookDuration = Duration.parse(cookTimeIso);
+                if (cookDuration.isNegative()) {
+                    throw new IllegalArgumentException("cookTime cannot be negative");
+                }
+            } catch (DateTimeParseException e) {
+                throw new IllegalArgumentException("invalid cookTime ISO 8601 format", e);
+            }
+        }
+        if (prepTimeIso != null) {
+            try {
+                prepDuration = Duration.parse(prepTimeIso);
+                if (prepDuration.isNegative()) {
+                    throw new IllegalArgumentException("prepTime cannot be negative");
+                }
+            } catch (DateTimeParseException e) {
+                throw new IllegalArgumentException("invalid prepTime ISO 8601 format", e);
+            }
+        }
+
+        // 计算总时长
+        Duration totalDuration = null;
+        if (cookDuration != null || prepDuration != null) {
+            long cookSeconds = cookDuration != null ? cookDuration.getSeconds() : 0;
+            long prepSeconds = prepDuration != null ? prepDuration.getSeconds() : 0;
+            totalDuration = Duration.ofSeconds(cookSeconds + prepSeconds);
+        }
+
+        // 更新数据库（只更新非 null 的字段）
+        if (cookTimeIso != null) {
+            jdbcTemplate.update("UPDATE recipes SET CookTime = ? WHERE RecipeId = ?", cookTimeIso, recipeId);
+        }
+        if (prepTimeIso != null) {
+            jdbcTemplate.update("UPDATE recipes SET PrepTime = ? WHERE RecipeId = ?", prepTimeIso, recipeId);
+        }
+        if (totalDuration != null) {
+            // 将 Duration 转换为 ISO 8601 字符串
+            long totalSeconds = totalDuration.getSeconds();
+            String totalIso = "PT" + totalSeconds + "S";
+            if (totalSeconds >= 3600) {
+                long hours = totalSeconds / 3600;
+                long minutes = (totalSeconds % 3600) / 60;
+                long secs = totalSeconds % 60;
+                totalIso = "PT" + hours + "H" + (minutes > 0 ? minutes + "M" : "") + (secs > 0 ? secs + "S" : "");
+            } else if (totalSeconds >= 60) {
+                long minutes = totalSeconds / 60;
+                long secs = totalSeconds % 60;
+                totalIso = "PT" + minutes + "M" + (secs > 0 ? secs + "S" : "");
+            }
+            jdbcTemplate.update("UPDATE recipes SET TotalTime = ? WHERE RecipeId = ?", totalIso, recipeId);
+        }
     }
 
     @Override
     public Map<String, Object> getClosestCaloriePair() {
-        return null;
+        // 先检查是否有至少两个菜谱有卡路里值
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM recipes WHERE Calories IS NOT NULL",
+                Long.class
+        );
+        if (count == null || count < 2) {
+            return null;
+        }
+
+        // 使用 SQL 找出卡路里最接近的一对菜谱
+        String sql = "WITH ranked_pairs AS (" +
+                "    SELECT " +
+                "        r1.RecipeId AS RecipeA, " +
+                "        r2.RecipeId AS RecipeB, " +
+                "        r1.Calories AS CaloriesA, " +
+                "        r2.Calories AS CaloriesB, " +
+                "        ABS(r1.Calories - r2.Calories) AS Difference " +
+                "    FROM recipes r1 " +
+                "    JOIN recipes r2 ON r1.RecipeId < r2.RecipeId " +
+                "    WHERE r1.Calories IS NOT NULL AND r2.Calories IS NOT NULL " +
+                ") " +
+                "SELECT RecipeA, RecipeB, CaloriesA, CaloriesB, Difference " +
+                "FROM ranked_pairs " +
+                "WHERE Difference = (SELECT MIN(Difference) FROM ranked_pairs) " +
+                "ORDER BY RecipeA ASC, RecipeB ASC " +
+                "LIMIT 1";
+
+        try {
+            Map<String, Object> row = jdbcTemplate.queryForMap(sql);
+            if (row.isEmpty()) {
+                return null;
+            }
+            // 确保返回的 key 符合接口要求（首字母大写），并确保数据类型正确
+            Map<String, Object> result = new HashMap<>();
+            Object recipeAObj = row.get("recipea");
+            Object recipeBObj = row.get("recipeb");
+            Object caloriesAObj = row.get("caloriesa");
+            Object caloriesBObj = row.get("caloriesb");
+            Object diffObj = row.get("difference");
+            
+            result.put("RecipeA", recipeAObj instanceof Number ? ((Number) recipeAObj).longValue() : recipeAObj);
+            result.put("RecipeB", recipeBObj instanceof Number ? ((Number) recipeBObj).longValue() : recipeBObj);
+            result.put("CaloriesA", caloriesAObj instanceof Number ? ((Number) caloriesAObj).doubleValue() : caloriesAObj);
+            result.put("CaloriesB", caloriesBObj instanceof Number ? ((Number) caloriesBObj).doubleValue() : caloriesBObj);
+            result.put("Difference", diffObj instanceof Number ? ((Number) diffObj).doubleValue() : diffObj);
+            return result;
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
     }
 
     @Override
     public List<Map<String, Object>> getTop3MostComplexRecipesByIngredients() {
-        return null;
+        String sql = "SELECT r.RecipeId, r.Name, COUNT(ri.IngredientPart) AS IngredientCount " +
+                "FROM recipes r " +
+                "JOIN recipe_ingredients ri ON r.RecipeId = ri.RecipeId " +
+                "GROUP BY r.RecipeId, r.Name " +
+                "ORDER BY IngredientCount DESC, r.RecipeId ASC " +
+                "LIMIT 3";
+
+        List<Map<String, Object>> results = jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("RecipeId", rs.getLong("RecipeId"));
+            map.put("Name", rs.getString("Name"));
+            map.put("IngredientCount", rs.getInt("IngredientCount"));
+            return map;
+        });
+
+        return results;
     }
-
-
 }

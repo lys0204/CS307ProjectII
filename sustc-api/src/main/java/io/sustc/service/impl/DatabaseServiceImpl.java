@@ -6,19 +6,17 @@ import io.sustc.dto.RecipeRecord;
 import io.sustc.service.DatabaseService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.util.*;
 import javax.sql.DataSource;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
 
 /**
  * It's important to mark your implementation class with {@link Service} annotation.
@@ -53,10 +51,10 @@ public class DatabaseServiceImpl implements DatabaseService {
             List<UserRecord> userRecords,
             List<RecipeRecord> recipeRecords) {
 
-        // 1. 创建表（如果不存在）
+        // ddl to create tables.
         createTables();
 
-        // 2. 清空旧数据（按外键从子表到父表的顺序）
+        // 清空旧数据（按外键从子表到父表的顺序）
         jdbcTemplate.update("DELETE FROM review_likes");
         jdbcTemplate.update("DELETE FROM reviews");
         jdbcTemplate.update("DELETE FROM recipe_ingredients");
@@ -64,12 +62,13 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.update("DELETE FROM recipes");
         jdbcTemplate.update("DELETE FROM users");
 
-        // 3. 批量插入 users（分批，降低单次 batch 体积）
+        final int batchSize = 1000; // 定义批处理大小
+
+        // 1. 批量插入 users (分批)
         if (userRecords != null && !userRecords.isEmpty()) {
             String userSql = "INSERT INTO users " +
                     "(AuthorId, AuthorName, Gender, Age, Followers, Following, Password, IsDeleted) " +
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-            final int batchSize = 1000;
 
             for (int start = 0; start < userRecords.size(); start += batchSize) {
                 final int from = start;
@@ -96,16 +95,14 @@ public class DatabaseServiceImpl implements DatabaseService {
             }
         }
 
-        // 4. 批量插入 recipes（分批）
+        // 2. 批量插入 recipes (分批)
         if (recipeRecords != null && !recipeRecords.isEmpty()) {
-            String recipeSql = "INSERT INTO recipes (" +
-                    "RecipeId, Name, AuthorId, CookTime, PrepTime, TotalTime, DatePublished, " +
-                    "Description, RecipeCategory, AggregatedRating, ReviewCount, " +
-                    "Calories, FatContent, SaturatedFatContent, CholesterolContent, SodiumContent, " +
-                    "CarbohydrateContent, FiberContent, SugarContent, ProteinContent, " +
-                    "RecipeServings, RecipeYield" +
-                    ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
-            final int batchSize = 1000;
+            String recipeSql = "INSERT INTO recipes " +
+                    "(RecipeId, Name, AuthorId, CookTime, PrepTime, TotalTime, DatePublished, Description, " +
+                    "RecipeCategory, AggregatedRating, ReviewCount, Calories, FatContent, SaturatedFatContent, " +
+                    "CholesterolContent, SodiumContent, CarbohydrateContent, FiberContent, SugarContent, " +
+                    "ProteinContent, RecipeServings, RecipeYield) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
             for (int start = 0; start < recipeRecords.size(); start += batchSize) {
                 final int from = start;
@@ -123,18 +120,39 @@ public class DatabaseServiceImpl implements DatabaseService {
                         ps.setTimestamp(7, r.getDatePublished());
                         ps.setString(8, r.getDescription());
                         ps.setString(9, r.getRecipeCategory());
-                        ps.setFloat(10, r.getAggregatedRating());
+                        Object aggRating = r.getAggregatedRating();
+                        ps.setObject(10, aggRating);
                         ps.setInt(11, r.getReviewCount());
-                        ps.setFloat(12, r.getCalories());
-                        ps.setFloat(13, r.getFatContent());
-                        ps.setFloat(14, r.getSaturatedFatContent());
-                        ps.setFloat(15, r.getCholesterolContent());
-                        ps.setFloat(16, r.getSodiumContent());
-                        ps.setFloat(17, r.getCarbohydrateContent());
-                        ps.setFloat(18, r.getFiberContent());
-                        ps.setFloat(19, r.getSugarContent());
-                        ps.setFloat(20, r.getProteinContent());
-                        ps.setString(21, String.valueOf(r.getRecipeServings()));
+                        Object calories = r.getCalories();
+                        ps.setObject(12, calories);
+                        Object fatContent = r.getFatContent();
+                        ps.setObject(13, fatContent);
+                        Object saturatedFatContent = r.getSaturatedFatContent();
+                        ps.setObject(14, saturatedFatContent);
+                        Object cholesterolContent = r.getCholesterolContent();
+                        ps.setObject(15, cholesterolContent);
+                        Object sodiumContent = r.getSodiumContent();
+                        ps.setObject(16, sodiumContent);
+                        Object carbohydrateContent = r.getCarbohydrateContent();
+                        ps.setObject(17, carbohydrateContent);
+                        Object fiberContent = r.getFiberContent();
+                        ps.setObject(18, fiberContent);
+                        Object sugarContent = r.getSugarContent();
+                        ps.setObject(19, sugarContent);
+                        Object proteinContent = r.getProteinContent();
+                        ps.setObject(20, proteinContent);
+                        Object servings = r.getRecipeServings();
+                        if (servings instanceof String) {
+                            try {
+                                ps.setInt(21, Integer.parseInt((String) servings));
+                            } catch (NumberFormatException e) {
+                                ps.setNull(21, java.sql.Types.INTEGER);
+                            }
+                        } else if (servings instanceof Number) {
+                            ps.setInt(21, ((Number) servings).intValue());
+                        } else {
+                            ps.setNull(21, java.sql.Types.INTEGER);
+                        }
                         ps.setString(22, r.getRecipeYield());
                     }
 
@@ -146,31 +164,46 @@ public class DatabaseServiceImpl implements DatabaseService {
             }
         }
 
-        // 5. 批量插入 recipe_ingredients
+        // 3. 批量插入 recipe_ingredients (分批，使用 ON CONFLICT 处理重复)
         if (recipeRecords != null && !recipeRecords.isEmpty()) {
-            List<Long> ingredientRecipeIds = new ArrayList<>();
-            List<String> ingredientParts = new ArrayList<>();
-            for (RecipeRecord r : recipeRecords) {
-                String[] ingredients = r.getRecipeIngredientParts();
-                if (ingredients == null) continue;
-                for (String ing : ingredients) {
-                    if (ing == null) continue;
-                    ingredientRecipeIds.add(r.getRecipeId());
-                    ingredientParts.add(ing);
+            // 预处理：收集所有配料，保持原始大小写
+            // 使用 LinkedHashSet 保持顺序，同时去重（大小写敏感）
+            Map<Long, Set<String>> recipeIngredientsMap = new HashMap<>();
+            for (RecipeRecord recipe : recipeRecords) {
+                if (recipe != null && recipe.getRecipeIngredientParts() != null) {
+                    long recipeId = recipe.getRecipeId();
+                    Set<String> ingredients = recipeIngredientsMap.computeIfAbsent(recipeId, k -> new LinkedHashSet<>());
+                    for (String ingredient : recipe.getRecipeIngredientParts()) {
+                        if (ingredient != null && !ingredient.trim().isEmpty()) {
+                            // 保持原始大小写，只去除首尾空格
+                            ingredients.add(ingredient.trim());
+                        }
+                    }
                 }
             }
 
-            if (!ingredientRecipeIds.isEmpty()) {
-                String ingredientSql = "INSERT INTO recipe_ingredients (RecipeId, IngredientPart) VALUES (?, ?)";
-                final int batchSize = 1000;
-                for (int start = 0; start < ingredientRecipeIds.size(); start += batchSize) {
+            // 批量插入（保持原始大小写）
+            List<Object[]> ingredientBatch = new ArrayList<>();
+            for (Map.Entry<Long, Set<String>> entry : recipeIngredientsMap.entrySet()) {
+                long recipeId = entry.getKey();
+                for (String ingredient : entry.getValue()) {
+                    ingredientBatch.add(new Object[]{recipeId, ingredient});
+                }
+            }
+
+            if (!ingredientBatch.isEmpty()) {
+                String ingredientSql = "INSERT INTO recipe_ingredients (RecipeId, IngredientPart) " +
+                        "VALUES (?, ?) ON CONFLICT (RecipeId, IngredientPart) DO NOTHING";
+
+                for (int start = 0; start < ingredientBatch.size(); start += batchSize) {
                     final int from = start;
-                    final int to = Math.min(from + batchSize, ingredientRecipeIds.size());
+                    final int to = Math.min(from + batchSize, ingredientBatch.size());
                     jdbcTemplate.batchUpdate(ingredientSql, new BatchPreparedStatementSetter() {
                         @Override
                         public void setValues(PreparedStatement ps, int i) throws SQLException {
-                            ps.setLong(1, ingredientRecipeIds.get(from + i));
-                            ps.setString(2, ingredientParts.get(from + i));
+                            Object[] row = ingredientBatch.get(from + i);
+                            ps.setLong(1, ((Number) row[0]).longValue());
+                            ps.setString(2, (String) row[1]);
                         }
 
                         @Override
@@ -182,12 +215,11 @@ public class DatabaseServiceImpl implements DatabaseService {
             }
         }
 
-        // 6. 批量插入 reviews（分批）
+        // 4. 批量插入 reviews (分批)
         if (reviewRecords != null && !reviewRecords.isEmpty()) {
-            String reviewSql = "INSERT INTO reviews (" +
-                    "ReviewId, RecipeId, AuthorId, Rating, Review, DateSubmitted, DateModified" +
-                    ") VALUES (?,?,?,?,?,?,?)";
-            final int batchSize = 1000;
+            String reviewSql = "INSERT INTO reviews " +
+                    "(ReviewId, RecipeId, AuthorId, Rating, Review, DateSubmitted, DateModified) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)";
 
             for (int start = 0; start < reviewRecords.size(); start += batchSize) {
                 final int from = start;
@@ -213,31 +245,31 @@ public class DatabaseServiceImpl implements DatabaseService {
             }
         }
 
-        // 7. 批量插入 review_likes（分批）
+        // 5. 批量插入 review_likes (从 ReviewRecord 中提取)
         if (reviewRecords != null && !reviewRecords.isEmpty()) {
-            List<Long> likeReviewIds = new ArrayList<>();
-            List<Long> likeUserIds = new ArrayList<>();
-
-            for (ReviewRecord r : reviewRecords) {
-                long[] likes = r.getLikes();
-                if (likes == null) continue;
-                for (long uid : likes) {
-                    likeReviewIds.add(r.getReviewId());
-                    likeUserIds.add(uid);
+            List<Object[]> likeBatch = new ArrayList<>();
+            for (ReviewRecord review : reviewRecords) {
+                if (review != null && review.getLikes() != null) {
+                    long reviewId = review.getReviewId();
+                    for (long authorId : review.getLikes()) {
+                        likeBatch.add(new Object[]{reviewId, authorId});
+                    }
                 }
             }
 
-            if (!likeReviewIds.isEmpty()) {
-                String likeSql = "INSERT INTO review_likes (ReviewId, AuthorId) VALUES (?, ?)";
-                final int batchSize = 1000;
-                for (int start = 0; start < likeReviewIds.size(); start += batchSize) {
+            if (!likeBatch.isEmpty()) {
+                String likeSql = "INSERT INTO review_likes (ReviewId, AuthorId) " +
+                        "VALUES (?, ?) ON CONFLICT (ReviewId, AuthorId) DO NOTHING";
+
+                for (int start = 0; start < likeBatch.size(); start += batchSize) {
                     final int from = start;
-                    final int to = Math.min(from + batchSize, likeReviewIds.size());
+                    final int to = Math.min(from + batchSize, likeBatch.size());
                     jdbcTemplate.batchUpdate(likeSql, new BatchPreparedStatementSetter() {
                         @Override
                         public void setValues(PreparedStatement ps, int i) throws SQLException {
-                            ps.setLong(1, likeReviewIds.get(from + i));
-                            ps.setLong(2, likeUserIds.get(from + i));
+                            Object[] row = likeBatch.get(from + i);
+                            ps.setLong(1, ((Number) row[0]).longValue());
+                            ps.setLong(2, ((Number) row[1]).longValue());
                         }
 
                         @Override
@@ -249,31 +281,44 @@ public class DatabaseServiceImpl implements DatabaseService {
             }
         }
 
-        // 8. 批量插入 user_follows（使用 followingUsers，避免重复，分批）
+        // 6. 批量插入 user_follows (从 UserRecord 中提取)
         if (userRecords != null && !userRecords.isEmpty()) {
-            List<Long> followerIds = new ArrayList<>();
-            List<Long> followingIds = new ArrayList<>();
-
-            for (UserRecord u : userRecords) {
-                long[] followingUsers = u.getFollowingUsers();
-                if (followingUsers == null) continue;
-                for (long fid : followingUsers) {
-                    followerIds.add(u.getAuthorId());
-                    followingIds.add(fid);
+            List<Object[]> followBatch = new ArrayList<>();
+            for (UserRecord user : userRecords) {
+                if (user != null) {
+                    long userId = user.getAuthorId();
+                    // 处理 followerUsers（关注我的人）
+                    if (user.getFollowerUsers() != null) {
+                        for (long followerId : user.getFollowerUsers()) {
+                            if (followerId != userId) { // 不能关注自己
+                                followBatch.add(new Object[]{followerId, userId});
+                            }
+                        }
+                    }
+                    // 处理 followingUsers（我关注的人）
+                    if (user.getFollowingUsers() != null) {
+                        for (long followingId : user.getFollowingUsers()) {
+                            if (followingId != userId) { // 不能关注自己
+                                followBatch.add(new Object[]{userId, followingId});
+                            }
+                        }
+                    }
                 }
             }
 
-            if (!followerIds.isEmpty()) {
-                String followSql = "INSERT INTO user_follows (FollowerId, FollowingId) VALUES (?, ?)";
-                final int batchSize = 1000;
-                for (int start = 0; start < followerIds.size(); start += batchSize) {
+            if (!followBatch.isEmpty()) {
+                String followSql = "INSERT INTO user_follows (FollowerId, FollowingId) " +
+                        "VALUES (?, ?) ON CONFLICT (FollowerId, FollowingId) DO NOTHING";
+
+                for (int start = 0; start < followBatch.size(); start += batchSize) {
                     final int from = start;
-                    final int to = Math.min(from + batchSize, followerIds.size());
+                    final int to = Math.min(from + batchSize, followBatch.size());
                     jdbcTemplate.batchUpdate(followSql, new BatchPreparedStatementSetter() {
                         @Override
                         public void setValues(PreparedStatement ps, int i) throws SQLException {
-                            ps.setLong(1, followerIds.get(from + i));
-                            ps.setLong(2, followingIds.get(from + i));
+                            Object[] row = followBatch.get(from + i);
+                            ps.setLong(1, ((Number) row[0]).longValue());
+                            ps.setLong(2, ((Number) row[1]).longValue());
                         }
 
                         @Override
@@ -369,8 +414,82 @@ public class DatabaseServiceImpl implements DatabaseService {
                         ")"
         };
 
+        // 创建表
         for (String sql : createTableSQLs) {
             jdbcTemplate.execute(sql);
+        }
+
+        // 创建索引以优化查询性能
+        createIndexes();
+    }
+
+    /**
+     * 创建索引以优化查询性能
+     * 根据实际查询模式分析，添加必要的索引
+     */
+    private void createIndexes() {
+        String[] createIndexSQLs = {
+                // users 表索引
+                // AuthorName 索引（用于用户名查询，虽然不常用，但如果有注册时检查用户名重复的需求）
+                "CREATE INDEX IF NOT EXISTS idx_users_authorname ON users(AuthorName)",
+                // IsDeleted 索引（用于过滤活跃用户）
+                "CREATE INDEX IF NOT EXISTS idx_users_isdeleted ON users(IsDeleted)",
+
+                // recipes 表索引
+                // AuthorId 索引（用于查询用户的食谱、feed 查询）
+                "CREATE INDEX IF NOT EXISTS idx_recipes_authorid ON recipes(AuthorId)",
+                // RecipeCategory 索引（用于分类筛选）
+                "CREATE INDEX IF NOT EXISTS idx_recipes_category ON recipes(RecipeCategory)",
+                // DatePublished 索引（用于时间排序）
+                "CREATE INDEX IF NOT EXISTS idx_recipes_datepublished ON recipes(DatePublished DESC NULLS LAST)",
+                // AggregatedRating 索引（用于评分排序）
+                "CREATE INDEX IF NOT EXISTS idx_recipes_rating ON recipes(AggregatedRating DESC NULLS LAST)",
+                // Calories 索引（用于卡路里排序）
+                "CREATE INDEX IF NOT EXISTS idx_recipes_calories ON recipes(Calories ASC NULLS LAST)",
+                // 复合索引：用于 feed 查询（AuthorId + RecipeCategory + DatePublished）
+                "CREATE INDEX IF NOT EXISTS idx_recipes_feed ON recipes(AuthorId, RecipeCategory, DatePublished DESC NULLS LAST)",
+                // 复合索引：用于搜索和排序（RecipeCategory + AggregatedRating）
+                "CREATE INDEX IF NOT EXISTS idx_recipes_category_rating ON recipes(RecipeCategory, AggregatedRating DESC NULLS LAST)",
+                // Name 和 Description 的全文搜索索引（PostgreSQL 使用 GIN 索引）
+                // 注意：需要先创建扩展，这里使用普通索引作为备选
+                "CREATE INDEX IF NOT EXISTS idx_recipes_name_lower ON recipes(LOWER(Name))",
+                "CREATE INDEX IF NOT EXISTS idx_recipes_description_lower ON recipes(LOWER(Description))",
+
+                // reviews 表索引
+                // RecipeId 索引（用于查询食谱的评论列表）
+                "CREATE INDEX IF NOT EXISTS idx_reviews_recipeid ON reviews(RecipeId)",
+                // AuthorId 索引（用于查询用户的评论）
+                "CREATE INDEX IF NOT EXISTS idx_reviews_authorid ON reviews(AuthorId)",
+                // DateModified 索引（用于评论时间排序）
+                "CREATE INDEX IF NOT EXISTS idx_reviews_datemodified ON reviews(DateModified DESC)",
+                // 复合索引：用于评论列表查询（RecipeId + DateModified）
+                "CREATE INDEX IF NOT EXISTS idx_reviews_recipe_date ON reviews(RecipeId, DateModified DESC)",
+
+                // recipe_ingredients 表索引
+                // RecipeId 索引（用于查询食谱的配料，主键已包含，但单独索引可能更快）
+                "CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_recipeid ON recipe_ingredients(RecipeId)",
+
+                // review_likes 表索引
+                // ReviewId 索引（用于统计点赞数，主键已包含，但单独索引可能更快）
+                "CREATE INDEX IF NOT EXISTS idx_review_likes_reviewid ON review_likes(ReviewId)",
+                // AuthorId 索引（用于查询用户点赞的评论）
+                "CREATE INDEX IF NOT EXISTS idx_review_likes_authorid ON review_likes(AuthorId)",
+
+                // user_follows 表索引（关键优化）
+                // FollowerId 索引（用于查询用户的关注列表、feed 查询）
+                "CREATE INDEX IF NOT EXISTS idx_user_follows_followerid ON user_follows(FollowerId)",
+                // FollowingId 索引（用于查询用户的粉丝列表、统计关注数）
+                "CREATE INDEX IF NOT EXISTS idx_user_follows_followingid ON user_follows(FollowingId)"
+        };
+
+        // 创建索引（忽略已存在的错误）
+        for (String sql : createIndexSQLs) {
+            try {
+                jdbcTemplate.execute(sql);
+            } catch (Exception e) {
+                // 索引可能已存在，忽略错误
+                log.debug("Index creation skipped (may already exist): {}", e.getMessage());
+            }
         }
     }
 

@@ -23,9 +23,13 @@ public class Application {
         val runnerBeans = ctx.getBeansOfType(ShellApplicationRunner.class);
         val benchmarkServiceBeans = ctx.getBeansOfType(BenchmarkService.class);
         log.debug("{} {}", runnerBeans, benchmarkServiceBeans);
-        if (runnerBeans.size() != 1 || benchmarkServiceBeans.size() != 1) {
-            log.error("Failed to verify beans");
-            SpringApplication.exit(ctx, () -> 1);
+        // 只在 benchmark 模式下进行严格验证
+        String activeProfile = ctx.getEnvironment().getProperty("spring.profiles.active", "");
+        if ("benchmark".equals(activeProfile)) {
+            if (runnerBeans.size() != 1 || benchmarkServiceBeans.size() != 1) {
+                log.error("Failed to verify beans");
+                SpringApplication.exit(ctx, () -> 1);
+            }
         }
     }
 }

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SUSTC - 食谱网站</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <header class="top-header">
+        <div class="header-container">
+            <div class="header-left">
+                <div class="logo">🍳 SUSTC</div>
+                <nav class="main-nav">
+                    <a href="#" class="nav-item active">首页</a>
+                    <a href="#" class="nav-item" onclick="switchTab('recipe'); return false;">食谱</a>
+                    <a href="#" class="nav-item" onclick="switchTab('review'); return false;">评论</a>
+                    <a href="#" class="nav-item" onclick="switchTab('user'); return false;">用户</a>
+                </nav>
+            </div>
+            <div class="header-center">
+                <div class="search-box">
+                    <input type="text" id="global-search" placeholder="搜索食谱、用户..." class="search-input">
+                    <button class="search-btn" onclick="globalSearch()">🔍</button>
+                </div>
+            </div>
+            <div class="header-right">
+                <button class="btn-upload" onclick="showUploadModal()">投稿</button>
+                <div class="user-menu">
+                    <span class="user-avatar">👤</span>
+                    <span class="user-name" id="current-user">未登录</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主导航栏 -->
+    <nav class="category-nav">
+        <div class="category-container">
+            <div class="category-left">
+                <a href="#" class="category-btn active" onclick="loadFeed(); return false;">
+                    <span class="icon">🔥</span> 热门
+                </a>
+                <a href="#" class="category-btn" onclick="switchTab('recipe'); return false;">
+                    <span class="icon">📝</span> 食谱
+                </a>
+            </div>
+            <div class="category-right">
+                <a href="#" class="category-tag" onclick="filterByCategory(''); return false;">全部</a>
+                <a href="#" class="category-tag" onclick="filterByCategory('Breakfast'); return false;">早餐</a>
+                <a href="#" class="category-tag" onclick="filterByCategory('Lunch/Snacks'); return false;">午餐</a>
+                <a href="#" class="category-tag" onclick="filterByCategory('Dessert'); return false;">甜品</a>
+                <a href="#" class="category-tag" onclick="filterByCategory('Beverages'); return false;">饮品</a>
+                <a href="#" class="category-tag" onclick="filterByCategory('Dinner'); return false;">晚餐</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容区 -->
+    <main class="main-content">
+        <div class="content-container">
+            <!-- 左侧内容区 -->
+            <div class="content-left">
+                <!-- 轮播图区域 -->
+                <div class="banner-section">
+                    <div class="banner-placeholder">
+                        <div class="banner-text">🍳 发现美味食谱</div>
+                        <div class="banner-subtitle">探索来自世界各地的美食</div>
+                    </div>
+                </div>
+
+                <!-- 内容区域 -->
+                <div class="content-section">
+                    <div class="section-header">
+                        <h2 class="section-title">推荐食谱</h2>
+                        <button class="btn-refresh" onclick="loadFeed()">换一换</button>
+                    </div>
+                    <div id="recipe-grid" class="recipe-grid">
+                        <!-- 食谱卡片将通过 JS 动态生成 -->
+                    </div>
+                    <div id="loading" class="loading" style="display: none;">加载中...</div>
+                </div>
+            </div>
+
+            <!-- 右侧边栏 -->
+            <aside class="sidebar">
+                <div class="sidebar-card">
+                    <h3>热门分类</h3>
+                    <div class="tag-list">
+                        <span class="tag">早餐</span>
+                        <span class="tag">午餐</span>
+                        <span class="tag">晚餐</span>
+                        <span class="tag">甜品</span>
+                        <span class="tag">饮品</span>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </main>
+
+    <!-- 登录/注册模态框 -->
+    <div id="login-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h2>登录 / 注册</h2>
+            <div class="modal-tabs">
+                <button class="modal-tab active" onclick="switchModalTab('login')">登录</button>
+                <button class="modal-tab" onclick="switchModalTab('register')">注册</button>
+            </div>
+            <div id="login-form" class="modal-form">
+                <input type="number" id="login-id" placeholder="用户ID" class="modal-input">
+                <input type="password" id="login-password" placeholder="密码" class="modal-input">
+                <button class="modal-btn" onclick="login()">登录</button>
+            </div>
+            <div id="register-form" class="modal-form" style="display: none;">
+                <input type="text" id="reg-username" placeholder="用户名" class="modal-input">
+                <input type="password" id="reg-password" placeholder="密码" class="modal-input">
+                <select id="reg-gender" class="modal-input">
+                    <option value="M">男</option>
+                    <option value="F">女</option>
+                    <option value="O">其他</option>
+                </select>
+                <input type="number" id="reg-age" placeholder="年龄" class="modal-input">
+                <button class="modal-btn" onclick="register()">注册</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

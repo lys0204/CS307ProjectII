@@ -9,6 +9,8 @@ import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.SpringApplication;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Profile;
 import org.springframework.shell.ShellApplicationRunner;
 import org.springframework.stereotype.Component;
@@ -42,6 +44,9 @@ public class BenchmarkRunner implements ShellApplicationRunner {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private ApplicationContext applicationContext;
 
     @Override
     @SneakyThrows
@@ -103,6 +108,14 @@ public class BenchmarkRunner implements ShellApplicationRunner {
                 });
 
         executor.shutdownNow();
-        objectMapper.writeValue(reportFile, results);
+        try {
+            objectMapper.writeValue(reportFile, results);
+            log.info("Benchmark completed. Report saved to: {}", reportFile.getAbsolutePath());
+        } catch (IOException e) {
+            log.error("Failed to write final benchmark report", e);
+        }
+        
+        // 退出 Spring Boot 应用
+        SpringApplication.exit(applicationContext, () -> 0);
     }
 }
