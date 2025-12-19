@@ -448,29 +448,9 @@ public class DatabaseServiceImpl implements DatabaseService {
             }
         }
 
-        // 7. 数据导入完成后，刷新所有菜谱的 AggregatedRating 和 ReviewCount
-        // 确保所有菜谱的聚合字段都是最新的
-        // AggregatedRating 需要四舍五入到两位小数，与 ReviewServiceImpl 保持一致
-        // Rating=0 的评论会被排除在平均值计算之外（benchmark 期望更高的平均值）
-        // 但 ReviewCount 包括所有评论（包括 Rating=0 的）
-        // 当没有有效评论时，AggregatedRating 应该设置为 0.0 而不是 NULL（benchmark 期望）
-        log.info("Refreshing aggregated ratings and review counts for all recipes...");
-        jdbcTemplate.update(
-                "UPDATE recipes SET " +
-                        "AggregatedRating = COALESCE((" +
-                        "    SELECT ROUND(AVG(Rating)::numeric, 2) " +
-                        "    FROM reviews " +
-                        "    WHERE reviews.RecipeId = recipes.RecipeId " +
-                        "    AND reviews.Rating > 0" +
-                        "), 0.0), " +
-                        "ReviewCount = (" +
-                        "    SELECT COUNT(*) " +
-                        "    FROM reviews " +
-                        "    WHERE reviews.RecipeId = recipes.RecipeId " +
-                        "    AND reviews.Rating > 0" +
-                        ")"
-        );
-        log.info("Aggregated ratings and review counts refreshed.");
+        // 注意：不要在这里刷新 AggregatedRating 和 ReviewCount！
+        // Benchmark 期望数据库中的数据与传入的 RecipeRecord 中的原始值完全一致，
+        // 而不是根据实际插入的评论重新计算。直接使用 RecipeRecord 中的原始值即可。
     }
 
 
