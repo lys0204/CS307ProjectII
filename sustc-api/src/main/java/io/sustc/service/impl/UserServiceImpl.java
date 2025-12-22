@@ -351,7 +351,8 @@ public class UserServiceImpl implements UserService {
             //+没有评论时返回0.0而不是null
             item.setAggregatedRating(aggObj == null ? 0.0 : ((Number) aggObj).doubleValue());
             int rc = rs.getInt("ReviewCount");
-            item.setReviewCount(rs.wasNull() ? null : rc);
+            //+没有评论时返回0而不是null
+            item.setReviewCount(rs.wasNull() ? 0 : rc);
             return item;
         });
 

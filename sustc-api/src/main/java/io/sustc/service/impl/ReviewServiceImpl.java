@@ -264,11 +264,13 @@ public class ReviewServiceImpl implements ReviewService {
         String orderBy = "ORDER BY r.DateModified DESC";
         String fromClause = "FROM reviews r " +
                 "JOIN users u ON r.AuthorId = u.AuthorId ";
+        boolean needGroupBy = false;
         if (sort != null && "likes_desc".equals(sort)) {
             fromClause = "FROM reviews r " +
                     "JOIN users u ON r.AuthorId = u.AuthorId " +
                     "LEFT JOIN review_likes rl ON r.ReviewId = rl.ReviewId ";
             orderBy = "ORDER BY COUNT(rl.AuthorId) DESC, r.DateModified DESC";
+            needGroupBy = true;
         } else if (sort != null && "date_desc".equals(sort)) {
             orderBy = "ORDER BY r.DateModified DESC";
         }
@@ -278,7 +280,7 @@ public class ReviewServiceImpl implements ReviewService {
                 "r.DateSubmitted, r.DateModified " +
                 fromClause +
                 "WHERE r.RecipeId = ? " +
-                (sort != null && "likes_desc".equals(sort) ? "GROUP BY r.ReviewId, r.RecipeId, r.AuthorId, u.AuthorName, r.Rating, r.Review, r.DateSubmitted, r.DateModified " : "") +
+                (needGroupBy ? "GROUP BY r.ReviewId, r.RecipeId, r.AuthorId, u.AuthorName, r.Rating, r.Review, r.DateSubmitted, r.DateModified " : "") +
                 orderBy + " LIMIT ? OFFSET ?";
 
         List<ReviewRecord> reviews = jdbcTemplate.query(sql, (rs, rowNum) -> {
@@ -296,7 +298,7 @@ public class ReviewServiceImpl implements ReviewService {
 
         for (ReviewRecord rec : reviews) {
             List<Long> likes = jdbcTemplate.queryForList(
-                    "SELECT AuthorId FROM review_likes WHERE ReviewId = ?",
+                    "SELECT AuthorId FROM review_likes WHERE ReviewId = ? ORDER BY AuthorId",
                     Long.class,
                     rec.getReviewId()
             );
@@ -339,19 +341,19 @@ public class ReviewServiceImpl implements ReviewService {
         Integer reviewCount = ((Number) stats.get("reviewcount")).intValue();
         Object avgRatingObj = stats.get("avgrating");
 
-        //+没有评论时设置为0.0而不是NULL
+        //+根据Javadoc，没有评论时aggregatedRating应为NULL
         if (reviewCount == 0 || avgRatingObj == null) {
             jdbcTemplate.update(
-                    "UPDATE recipes SET AggregatedRating = 0.0, ReviewCount = 0 WHERE RecipeId = ?",
-                    recipeId
+                "UPDATE recipes SET AggregatedRating = NULL, ReviewCount = 0 WHERE RecipeId = ?",
+                recipeId
             );
         } else {
             Double avgRating = ((Number) avgRatingObj).doubleValue();
             jdbcTemplate.update(
-                    "UPDATE recipes SET AggregatedRating = ?, ReviewCount = ? WHERE RecipeId = ?",
-                    avgRating,
-                    reviewCount,
-                    recipeId
+                "UPDATE recipes SET AggregatedRating = ?, ReviewCount = ? WHERE RecipeId = ?",
+                avgRating,
+                reviewCount,
+                recipeId
             );
         }
 

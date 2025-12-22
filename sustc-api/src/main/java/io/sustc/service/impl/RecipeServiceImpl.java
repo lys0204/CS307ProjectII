@@ -79,7 +79,7 @@ public class RecipeServiceImpl implements RecipeService {
             );
 
             List<String> ingredients = jdbcTemplate.queryForList(
-                    "SELECT IngredientPart FROM recipe_ingredients WHERE RecipeId = ? ORDER BY IngredientPart",
+                    "SELECT IngredientPart FROM recipe_ingredients WHERE RecipeId = ? ORDER BY LOWER(IngredientPart)",
                     String.class,
                     recipeId
             );
@@ -245,7 +245,7 @@ public class RecipeServiceImpl implements RecipeService {
                 r.setAuthorName(null);
             }
             List<String> ingredients = jdbcTemplate.queryForList(
-                    "SELECT IngredientPart FROM recipe_ingredients WHERE RecipeId = ? ORDER BY IngredientPart",
+                    "SELECT IngredientPart FROM recipe_ingredients WHERE RecipeId = ? ORDER BY LOWER(IngredientPart)",
                     String.class,
                     r.getRecipeId()
             );
