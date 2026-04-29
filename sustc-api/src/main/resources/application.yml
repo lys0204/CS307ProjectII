@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/sustc
+    url: jdbc:postgresql://localhost:12138/sustc
     username: sustc
     password: sustc
     hikari:
@@ -27,6 +27,11 @@ spring:
 
 server:
   port: 8080
+
+deepseek:
+  api-key: ${DEEPSEEK_API_KEY:your-key-here}
+  base-url: https://api.deepseek.com
+  model: deepseek-chat
 
 logging:
   level:

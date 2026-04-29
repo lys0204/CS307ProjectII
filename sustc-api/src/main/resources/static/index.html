@@ -1,13 +1,12 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SUSTC - 食谱网站</title>
-    <link rel="stylesheet" href="css/style.css?v=2">
+    <title>SUSTC - Recipe Platform</title>
+    <link rel="stylesheet" href="css/style.css?v=3">
 </head>
 <body>
-    <!-- 顶部导航栏 -->
     <header class="top-header">
         <div class="header-container">
             <div class="header-left">
@@ -15,7 +14,7 @@
             </div>
             <div class="header-center">
                 <div class="search-box">
-                    <input type="text" id="global-search" placeholder="搜索食谱..." class="search-input">
+                    <input type="text" id="global-search" placeholder="Search recipes..." class="search-input">
                     <button class="search-btn" onclick="globalSearch()">🔍</button>
                 </div>
             </div>
@@ -24,53 +23,65 @@
         </div>
     </header>
 
-    <!-- 分类导航栏 -->
     <nav class="category-nav">
         <div class="category-container">
             <div class="category-right">
-                <a href="#" class="category-tag active" onclick="filterByCategory('', event); return false;">全部</a>
-                <a href="#" class="category-tag" onclick="filterByCategory('Breakfast', event); return false;">早餐</a>
-                <a href="#" class="category-tag" onclick="filterByCategory('Lunch/Snacks', event); return false;">午餐</a>
-                <a href="#" class="category-tag" onclick="filterByCategory('Dessert', event); return false;">甜品</a>
-                <a href="#" class="category-tag" onclick="filterByCategory('Beverages', event); return false;">饮品</a>
+                <a href="#" class="category-tag active" onclick="filterByCategory('', event); return false;">All</a>
+                <a href="#" class="category-tag" onclick="filterByCategory('Breakfast', event); return false;">Breakfast</a>
+                <a href="#" class="category-tag" onclick="filterByCategory('Lunch/Snacks', event); return false;">Lunch</a>
+                <a href="#" class="category-tag" onclick="filterByCategory('Dessert', event); return false;">Dessert</a>
+                <a href="#" class="category-tag" onclick="filterByCategory('Beverages', event); return false;">Beverages</a>
             </div>
         </div>
     </nav>
 
-    <!-- 主内容区 -->
     <main class="main-content">
         <div class="content-container">
-            <!-- 左侧内容区 -->
             <div class="content-left">
-                <!-- 内容区域 -->
                 <div class="content-section">
                     <div class="section-header">
-                        <h2 class="section-title">推荐食谱</h2>
+                        <h2 class="section-title">Recommended Recipes</h2>
                     </div>
                     <div id="recipe-grid" class="recipe-grid">
-                        <!-- 食谱卡片将通过 JS 动态生成 -->
                     </div>
-                    <div id="loading" class="loading" style="display: none;">加载中...</div>
+                    <div id="loading" class="loading" style="display: none;">Loading...</div>
                     <div id="pagination" class="pagination" style="display: none;">
-                        <button id="prev-page" onclick="changePage(-1)">上一页</button>
-                        <span id="page-info">第 1 页 / 共 1 页</span>
-                        <button id="next-page" onclick="changePage(1)">下一页</button>
+                        <button id="prev-page" onclick="changePage(-1)">Previous</button>
+                        <span id="page-info">Page 1 / 1</span>
+                        <button id="next-page" onclick="changePage(1)">Next</button>
                     </div>
                 </div>
             </div>
         </div>
     </main>
 
-    <!-- 食谱详情模态框 -->
     <div id="recipe-modal" class="modal" style="display: none;">
         <div class="modal-content modal-large">
             <span class="close" onclick="closeRecipeModal()">&times;</span>
             <div id="recipe-detail">
-                <!-- 详情内容将通过 JS 动态生成 -->
             </div>
         </div>
     </div>
 
-    <script src="js/app.js?v=2"></script>
+    <div id="chat-float-btn" class="chat-float-btn" onclick="toggleChat()">
+        🤖
+    </div>
+
+    <div id="chat-panel" class="chat-panel" style="display: none;">
+        <div class="chat-header">
+            <span>AI Cooking Assistant</span>
+            <span class="chat-close" onclick="toggleChat()">&times;</span>
+        </div>
+        <div id="chat-messages" class="chat-messages">
+            <div class="chat-msg assistant">Hello! I'm your AI cooking assistant. Tell me what you'd like to eat and I'll find the best recipes for you.</div>
+        </div>
+        <div class="chat-input-area">
+            <input type="text" id="chat-input" placeholder="e.g. Recommend a low-fat high-protein dish..."
+                   onkeypress="if(event.key==='Enter') sendChat()">
+            <button class="chat-send-btn" onclick="sendChat()">Send</button>
+        </div>
+    </div>
+
+    <script src="js/app.js?v=3"></script>
 </body>
 </html>
