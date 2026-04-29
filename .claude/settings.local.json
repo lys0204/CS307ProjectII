@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"D:/ideaprograms/CS307ProjectII/sustc-api/src/main/java/io/sustc/config\")",
+      "Bash(mkdir -p \"D:/ideaprograms/CS307ProjectII/sustc-api/src/main/java/io/sustc/controller\")",
+      "Bash(mkdir -p \"D:/ideaprograms/CS307ProjectII/sustc-api/src/main/java/io/sustc/util\")",
+      "Bash(mkdir -p \"D:/ideaprograms/CS307ProjectII/sustc-api/src/main/resources/static\")",
+      "Bash(mkdir -p \"D:/ideaprograms/CS307ProjectII/sustc-api/src/main/resources/data\")",
+      "Bash(javap -c -p \"D:/ideaprograms/CS307ProjectII/sustc-runner/bin/main/io/sustc/command/DatabaseCommand.class\")",
+      "Bash(./gradlew clean *)",
+      "Bash(cmd //c \"gradlew.bat clean build\")",
+      "Bash(java -version)",
+      "Bash(bash gradlew *)",
+      "Read(//d/program//**)",
+      "Read(//c//**)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git show *)",
+      "Bash(git rm *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git merge *)",
+      "Bash(git branch *)"
+    ]
+  }
+}

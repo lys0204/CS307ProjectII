@@ -173,42 +173,42 @@ public class RecipeServiceImpl implements RecipeService {
 
         List<RecipeRecord> recipes = jdbcTemplate.query(sql, params.toArray(), (rs, rowNum) -> {
             RecipeRecord r = new RecipeRecord();
-            r.setRecipeId(rs.getLong("RecipeId"));
-            r.setName(rs.getString("Name"));
-            r.setAuthorId(rs.getLong("AuthorId"));
-            r.setAuthorName(rs.getString("AuthorName"));
-            r.setCookTime(rs.getString("CookTime"));
-            r.setPrepTime(rs.getString("PrepTime"));
-            r.setTotalTime(rs.getString("TotalTime"));
-            r.setDatePublished(rs.getTimestamp("DatePublished"));
-            r.setDescription(rs.getString("Description"));
-            r.setRecipeCategory(rs.getString("RecipeCategory"));
-            Object aggObj = rs.getObject("AggregatedRating");
+            r.setRecipeId(rs.getLong("recipeid"));
+            r.setName(rs.getString("name"));
+            r.setAuthorId(rs.getLong("authorid"));
+            r.setAuthorName(rs.getString("authorname"));
+            r.setCookTime(rs.getString("cooktime"));
+            r.setPrepTime(rs.getString("preptime"));
+            r.setTotalTime(rs.getString("totaltime"));
+            r.setDatePublished(rs.getTimestamp("datepublished"));
+            r.setDescription(rs.getString("description"));
+            r.setRecipeCategory(rs.getString("recipecategory"));
+            Object aggObj = rs.getObject("aggregatedrating");
             r.setAggregatedRating(aggObj == null ? 0 : ((Number) aggObj).floatValue());
-            r.setReviewCount(rs.getInt("ReviewCount"));
-            Object caloriesObj = rs.getObject("Calories");
+            r.setReviewCount(rs.getInt("reviewcount"));
+            Object caloriesObj = rs.getObject("calories");
             r.setCalories(caloriesObj == null ? 0.0f : ((Number) caloriesObj).floatValue());
-            Object fatObj = rs.getObject("FatContent");
+            Object fatObj = rs.getObject("fatcontent");
             r.setFatContent(fatObj == null ? 0.0f : ((Number) fatObj).floatValue());
-            Object satFatObj = rs.getObject("SaturatedFatContent");
+            Object satFatObj = rs.getObject("saturatedfatcontent");
             r.setSaturatedFatContent(satFatObj == null ? 0.0f : ((Number) satFatObj).floatValue());
-            Object cholObj = rs.getObject("CholesterolContent");
+            Object cholObj = rs.getObject("cholesterolcontent");
             r.setCholesterolContent(cholObj == null ? 0.0f : ((Number) cholObj).floatValue());
-            Object sodiumObj = rs.getObject("SodiumContent");
+            Object sodiumObj = rs.getObject("sodiumcontent");
             r.setSodiumContent(sodiumObj == null ? 0.0f : ((Number) sodiumObj).floatValue());
-            Object carbObj = rs.getObject("CarbohydrateContent");
+            Object carbObj = rs.getObject("carbohydratecontent");
             r.setCarbohydrateContent(carbObj == null ? 0.0f : ((Number) carbObj).floatValue());
-            Object fiberObj = rs.getObject("FiberContent");
+            Object fiberObj = rs.getObject("fibercontent");
             r.setFiberContent(fiberObj == null ? 0.0f : ((Number) fiberObj).floatValue());
-            Object sugarObj = rs.getObject("SugarContent");
+            Object sugarObj = rs.getObject("sugarcontent");
             r.setSugarContent(sugarObj == null ? 0.0f : ((Number) sugarObj).floatValue());
-            Object proteinObj = rs.getObject("ProteinContent");
+            Object proteinObj = rs.getObject("proteincontent");
             r.setProteinContent(proteinObj == null ? 0.0f : ((Number) proteinObj).floatValue());
-            Object servingsObj = rs.getObject("RecipeServings");
+            Object servingsObj = rs.getObject("recipeservings");
             r.setRecipeServings(servingsObj == null ? 0 : Integer.parseInt(servingsObj.toString()));
-            r.setRecipeYield(rs.getString("RecipeYield"));
+            r.setRecipeYield(rs.getString("recipeyield"));
 
-            String ingredientTags = rs.getString("IngredientTags");
+            String ingredientTags = rs.getString("ingredienttags");
             r.setRecipeIngredientParts(
                     ingredientTags != null ? ingredientTags.split("\\|", -1) : new String[0]
             );
@@ -307,13 +307,15 @@ public class RecipeServiceImpl implements RecipeService {
     public void deleteRecipe(long recipeId, AuthInfo auth) {
         long operatorId = requireActiveUser(auth);
 
-        Long authorId = jdbcTemplate.queryForObject(
-                "SELECT AuthorId FROM recipes WHERE RecipeId = ?",
-                Long.class,
-                recipeId
-        );
-        if (authorId == null) {
-            throw new IllegalArgumentException("recipe does not exist");
+        Long authorId;
+        try {
+            authorId = jdbcTemplate.queryForObject(
+                    "SELECT AuthorId FROM recipes WHERE RecipeId = ?",
+                    Long.class,
+                    recipeId
+            );
+        } catch (EmptyResultDataAccessException e) {
+            throw new IllegalArgumentException("recipe does not exist", e);
         }
 
         if (authorId != operatorId) {
@@ -328,13 +330,15 @@ public class RecipeServiceImpl implements RecipeService {
     public void updateTimes(AuthInfo auth, long recipeId, String cookTimeIso, String prepTimeIso) {
         long operatorId = requireActiveUser(auth);
 
-        Long authorId = jdbcTemplate.queryForObject(
-                "SELECT AuthorId FROM recipes WHERE RecipeId = ?",
-                Long.class,
-                recipeId
-        );
-        if (authorId == null) {
-            throw new IllegalArgumentException("recipe does not exist");
+        Long authorId;
+        try {
+            authorId = jdbcTemplate.queryForObject(
+                    "SELECT AuthorId FROM recipes WHERE RecipeId = ?",
+                    Long.class,
+                    recipeId
+            );
+        } catch (EmptyResultDataAccessException e) {
+            throw new IllegalArgumentException("recipe does not exist", e);
         }
         if (authorId != operatorId) {
             throw new SecurityException("only recipe author can update times");
@@ -364,9 +368,40 @@ public class RecipeServiceImpl implements RecipeService {
         }
 
         Duration totalDuration = null;
-        if (cookDuration != null || prepDuration != null) {
-            long cookSeconds = cookDuration != null ? cookDuration.getSeconds() : 0;
-            long prepSeconds = prepDuration != null ? prepDuration.getSeconds() : 0;
+        boolean hasCookUpdate = cookTimeIso != null;
+        boolean hasPrepUpdate = prepTimeIso != null;
+        if (hasCookUpdate || hasPrepUpdate) {
+            Duration effectiveCookDuration = cookDuration;
+            Duration effectivePrepDuration = prepDuration;
+
+            if (!hasCookUpdate || !hasPrepUpdate) {
+                Map<String, Object> currentTimes = jdbcTemplate.queryForMap(
+                        "SELECT CookTime, PrepTime FROM recipes WHERE RecipeId = ?",
+                        recipeId
+                );
+                if (!hasCookUpdate) {
+                    Object curCook = currentTimes.get("cooktime");
+                    if (curCook != null) {
+                        try {
+                            effectiveCookDuration = Duration.parse(curCook.toString());
+                        } catch (DateTimeParseException e) {
+                            throw new IllegalStateException("stored cookTime is invalid", e);
+                        }
+                    }
+                }
+                if (!hasPrepUpdate) {
+                    Object curPrep = currentTimes.get("preptime");
+                    if (curPrep != null) {
+                        try {
+                            effectivePrepDuration = Duration.parse(curPrep.toString());
+                        } catch (DateTimeParseException e) {
+                            throw new IllegalStateException("stored prepTime is invalid", e);
+                        }
+                    }
+                }
+            }
+            long cookSeconds = effectiveCookDuration != null ? effectiveCookDuration.getSeconds() : 0;
+            long prepSeconds = effectivePrepDuration != null ? effectivePrepDuration.getSeconds() : 0;
             totalDuration = Duration.ofSeconds(cookSeconds + prepSeconds);
         }
 
@@ -403,21 +438,20 @@ public class RecipeServiceImpl implements RecipeService {
             return null;
         }
 
-        String sql = "WITH ranked_pairs AS (" +
-                "    SELECT " +
-                "        n1.RecipeId AS RecipeA, " +
-                "        n2.RecipeId AS RecipeB, " +
-                "        n1.Calories AS CaloriesA, " +
-                "        n2.Calories AS CaloriesB, " +
-                "        ABS(n1.Calories - n2.Calories) AS Difference " +
-                "    FROM recipes n1 " +
-                "    JOIN recipes n2 ON n1.RecipeId < n2.RecipeId " +
-                "    WHERE n1.Calories IS NOT NULL AND n2.Calories IS NOT NULL " +
+        String sql = "WITH ordered AS (" +
+                "    SELECT RecipeId, Calories, " +
+                "           LEAD(RecipeId) OVER w AS NextRecipeId, " +
+                "           LEAD(Calories) OVER w AS NextCalories, " +
+                "           ABS(Calories - LEAD(Calories) OVER w) AS Difference " +
+                "    FROM recipes " +
+                "    WHERE Calories IS NOT NULL " +
+                "    WINDOW w AS (ORDER BY Calories ASC, RecipeId ASC) " +
                 ") " +
-                "SELECT RecipeA, RecipeB, CaloriesA, CaloriesB, Difference " +
-                "FROM ranked_pairs " +
-                "WHERE Difference = (SELECT MIN(Difference) FROM ranked_pairs) " +
-                "ORDER BY RecipeA ASC, RecipeB ASC " +
+                "SELECT RecipeId AS RecipeA, NextRecipeId AS RecipeB, " +
+                "       Calories AS CaloriesA, NextCalories AS CaloriesB, Difference " +
+                "FROM ordered " +
+                "WHERE NextRecipeId IS NOT NULL " +
+                "ORDER BY Difference ASC, RecipeA ASC, RecipeB ASC " +
                 "LIMIT 1";
 
         try {
@@ -454,8 +488,8 @@ public class RecipeServiceImpl implements RecipeService {
 
         List<Map<String, Object>> results = jdbcTemplate.query(sql, (rs, rowNum) -> {
             Map<String, Object> map = new HashMap<>();
-            map.put("RecipeId", rs.getLong("RecipeId"));
-            map.put("Name", rs.getString("Name"));
+            map.put("RecipeId", rs.getLong("recipeid"));
+            map.put("Name", rs.getString("name"));
             map.put("IngredientCount", rs.getInt("IngredientCount"));
             return map;
         });

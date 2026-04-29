@@ -33,7 +33,7 @@ function globalSearch() {
 /**
  * 按分类筛选
  */
-function filterByCategory(category) {
+function filterByCategory(category, event) {
     currentCategory = category;
     currentPage = 1;
     currentKeyword = '';
@@ -163,9 +163,9 @@ function renderRecipeGrid(recipes) {
                 🍳
             </div>
             <div class="recipe-info">
-                <div class="recipe-title">${recipe.name || '未命名食谱'}</div>
+                <div class="recipe-title">${escapeHtml(recipe.name || '未命名食谱')}</div>
                 <div class="recipe-meta">
-                    <span class="recipe-author">${recipe.authorName || '未知'}</span>
+                    <span class="recipe-author">${escapeHtml(recipe.authorName || '未知')}</span>
                     <div class="recipe-stats">
                         ${recipe.aggregatedRating ? `<span class="recipe-stat">⭐ ${recipe.aggregatedRating.toFixed(1)}</span>` : ''}
                         ${recipe.reviewCount ? `<span class="recipe-stat">💬 ${recipe.reviewCount}</span>` : ''}
@@ -219,15 +219,15 @@ async function viewRecipe(recipeId) {
         
         detailDiv.innerHTML = `
             <div class="recipe-detail-header">
-                <h2>${recipe.name || '未命名食谱'}</h2>
+                <h2>${escapeHtml(recipe.name || '未命名食谱')}</h2>
                 <div class="recipe-detail-rating">
                     ${recipe.aggregatedRating ? `<span class="rating-badge">⭐ ${recipe.aggregatedRating.toFixed(1)}</span>` : '<span class="rating-badge">暂无评分</span>'}
                     <span class="review-count-badge">💬 ${recipe.reviewCount || 0} 条评论</span>
                 </div>
             </div>
             <div class="recipe-detail-meta">
-                <div class="meta-item"><strong>作者：</strong><span>${recipe.authorName || '未知'}</span></div>
-                <div class="meta-item"><strong>分类：</strong><span>${recipe.recipeCategory || '未分类'}</span></div>
+                <div class="meta-item"><strong>作者：</strong><span>${escapeHtml(recipe.authorName || '未知')}</span></div>
+                <div class="meta-item"><strong>分类：</strong><span>${escapeHtml(recipe.recipeCategory || '未分类')}</span></div>
             </div>
             <div class="recipe-description">
                 <h3>📝 简介</h3>

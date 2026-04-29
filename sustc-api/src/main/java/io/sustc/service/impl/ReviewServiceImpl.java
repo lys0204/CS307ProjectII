@@ -47,35 +47,6 @@ public class ReviewServiceImpl implements ReviewService {
         }
     }
 
-    private long requireActiveUserWithPassword(AuthInfo auth) {
-        if (auth == null) {
-            throw new SecurityException("auth is null");
-        }
-        long userId = auth.getAuthorId();
-        String password = auth.getPassword();
-        try {
-            Map<String, Object> row = jdbcTemplate.queryForMap(
-                    "SELECT Password, IsDeleted FROM users WHERE AuthorId = ?",
-                    userId
-            );
-            Map<String, Object> lowerCaseRow = new HashMap<>();
-            row.forEach((k, v) -> lowerCaseRow.put(k.toLowerCase(), v));
-
-            Boolean isDeleted = (Boolean) lowerCaseRow.get("isdeleted");
-            if (isDeleted == null || isDeleted) {
-                throw new SecurityException("user is inactive");
-            }
-            Object storedPwdObj = lowerCaseRow.get("password");
-            String storedPwd = storedPwdObj == null ? null : storedPwdObj.toString();
-            if (password == null || !password.equals(storedPwd)) {
-                throw new SecurityException("password mismatch");
-            }
-            return userId;
-        } catch (EmptyResultDataAccessException e) {
-            throw new SecurityException("user does not exist", e);
-        }
-    }
-
     private void updateRecipeAggregatedRating(long recipeId) {
         Map<String, Object> stats = jdbcTemplate.queryForMap(
                 "SELECT " +
@@ -219,7 +190,7 @@ public class ReviewServiceImpl implements ReviewService {
     @Override
     @Transactional
     public long likeReview(AuthInfo auth, long reviewId) {
-        long userId = requireActiveUserWithPassword(auth);
+        long userId = requireActiveUser(auth);
 
         Long reviewAuthorId;
         try {
@@ -254,7 +225,7 @@ public class ReviewServiceImpl implements ReviewService {
     @Override
     @Transactional
     public long unlikeReview(AuthInfo auth, long reviewId) {
-        long userId = requireActiveUserWithPassword(auth);
+        long userId = requireActiveUser(auth);
 
         Boolean reviewExists = jdbcTemplate.queryForObject(
                 "SELECT EXISTS(SELECT 1 FROM reviews WHERE ReviewId = ?)",
@@ -316,14 +287,14 @@ public class ReviewServiceImpl implements ReviewService {
 
         List<ReviewRecord> reviews = jdbcTemplate.query(sql, (rs, rowNum) -> {
             ReviewRecord rec = new ReviewRecord();
-            rec.setReviewId(rs.getLong("ReviewId"));
-            rec.setRecipeId(rs.getLong("RecipeId"));
-            rec.setAuthorId(rs.getLong("AuthorId"));
-            rec.setAuthorName(rs.getString("AuthorName"));
-            rec.setRating(rs.getFloat("Rating"));
-            rec.setReview(rs.getString("Review"));
-            rec.setDateSubmitted(rs.getTimestamp("DateSubmitted"));
-            rec.setDateModified(rs.getTimestamp("DateModified"));
+            rec.setReviewId(rs.getLong("reviewid"));
+            rec.setRecipeId(rs.getLong("recipeid"));
+            rec.setAuthorId(rs.getLong("authorid"));
+            rec.setAuthorName(rs.getString("authorname"));
+            rec.setRating(rs.getFloat("rating"));
+            rec.setReview(rs.getString("review"));
+            rec.setDateSubmitted(rs.getTimestamp("datesubmitted"));
+            rec.setDateModified(rs.getTimestamp("datemodified"));
             return rec;
         }, recipeId, size, offset);
 

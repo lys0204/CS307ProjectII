@@ -8,7 +8,6 @@ import io.sustc.util.CsvParser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
@@ -21,23 +20,9 @@ public class DataInitializer implements CommandLineRunner {
     @Autowired
     private DatabaseService databaseService;
 
-    @Autowired
-    private JdbcTemplate jdbcTemplate;
-
     @Override
     public void run(String... args) {
-        try {
-            Integer count = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM users", Integer.class);
-            if (count != null && count > 0) {
-                log.info("Data already loaded ({} users found), skipping import.", count);
-                return;
-            }
-        } catch (Exception e) {
-            log.info("Could not check user count (tables may not exist yet): {}", e.getMessage());
-        }
-
-        log.info("Data not found, starting CSV import...");
+        log.info("Starting data import (tables will be rebuilt if schema changed)...");
 
         try {
             List<UserRecord> users;

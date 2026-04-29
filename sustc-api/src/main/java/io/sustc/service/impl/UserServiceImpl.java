@@ -336,21 +336,20 @@ public class UserServiceImpl implements UserService {
 
         List<FeedItem> items = jdbcTemplate.query(sql, params.toArray(), (rs, rowNum) -> {
             FeedItem item = new FeedItem();
-            item.setRecipeId(rs.getLong("RecipeId"));
-            item.setName(rs.getString("Name"));
-            item.setAuthorId(rs.getLong("AuthorId"));
-            item.setAuthorName(rs.getString("AuthorName"));
-            Timestamp ts = rs.getTimestamp("DatePublished");
+            item.setRecipeId(rs.getLong("recipeid"));
+            item.setName(rs.getString("name"));
+            item.setAuthorId(rs.getLong("authorid"));
+            item.setAuthorName(rs.getString("authorname"));
+            Timestamp ts = rs.getTimestamp("datepublished");
             if (ts != null) {
-                long adjustedTime = ts.getTime() + 8 * 60 * 60 * 1000;
-                item.setDatePublished(new Timestamp(adjustedTime).toInstant());
+                item.setDatePublished(ts.toInstant());
             } else {
                 item.setDatePublished(null);
             }
-            Object aggObj = rs.getObject("AggregatedRating");
+            Object aggObj = rs.getObject("aggregatedrating");
             //+没有评论时返回0.0而不是null
             item.setAggregatedRating(aggObj == null ? 0.0 : ((Number) aggObj).doubleValue());
-            int rc = rs.getInt("ReviewCount");
+            int rc = rs.getInt("reviewcount");
             //+没有评论时返回0而不是null
             item.setReviewCount(rs.wasNull() ? 0 : rc);
             return item;
@@ -388,8 +387,8 @@ public class UserServiceImpl implements UserService {
         try {
             return jdbcTemplate.queryForObject(sql, (rs, rowNum) -> {
                 Map<String, Object> map = new HashMap<>();
-                map.put("AuthorId", rs.getLong("AuthorId"));
-                map.put("AuthorName", rs.getString("AuthorName"));
+                map.put("AuthorId", rs.getLong("authorid"));
+                map.put("AuthorName", rs.getString("authorname"));
                 map.put("Ratio", rs.getDouble("Ratio"));
                 return map;
             });
