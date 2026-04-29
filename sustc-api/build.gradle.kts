@@ -20,6 +20,11 @@ dependencies {
     implementation("com.fasterxml.jackson.core:jackson-databind")
     implementation("org.furyio:fury-core:0.3.1")
 
+    // LangChain4j for RAG + Agent
+    implementation("dev.langchain4j:langchain4j:1.0.0-beta1")
+    implementation("dev.langchain4j:langchain4j-open-ai:1.0.0-beta1")
+    implementation("dev.langchain4j:langchain4j-embeddings-bge-small-en-v15-q:1.0.0-beta1")
+
     runtimeOnly("org.postgresql:postgresql")
 }
 

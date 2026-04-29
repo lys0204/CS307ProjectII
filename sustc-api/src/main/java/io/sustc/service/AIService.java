@@ -1,15 +1,22 @@
 package io.sustc.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.sustc.agent.RecipeTools;
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.service.AiServices;
+import dev.langchain4j.store.embedding.EmbeddingMatch;
+import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
+import dev.langchain4j.store.embedding.EmbeddingStore;
 import io.sustc.dto.ChatResponse;
-import io.sustc.dto.PageResult;
 import io.sustc.dto.RecipeRecord;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
 import java.util.*;
 
@@ -17,140 +24,112 @@ import java.util.*;
 @Slf4j
 public class AIService {
 
-    @Value("${deepseek.api-key}")
-    private String apiKey;
-
-    @Value("${deepseek.base-url}")
-    private String baseUrl;
-
-    @Value("${deepseek.model}")
-    private String model;
+    @Autowired
+    private OpenAiChatModel chatLanguageModel;
 
     @Autowired
-    private RecipeService recipeService;
+    private EmbeddingModel embeddingModel;
 
     @Autowired
-    private ObjectMapper objectMapper;
+    private EmbeddingStore<TextSegment> embeddingStore;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    @Autowired
+    private RecipeTools recipeTools;
+
+    interface Assistant {
+        String chat(String userMessage);
+    }
+
+    /**
+     * Convert a RecipeRecord to a text segment for embedding.
+     */
+    public static TextSegment recipeToTextSegment(RecipeRecord r) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Recipe: ").append(r.getName()).append("\n");
+        sb.append("Category: ").append(r.getRecipeCategory()).append("\n");
+        if (r.getDescription() != null && !r.getDescription().isEmpty()) {
+            sb.append("Description: ").append(r.getDescription()).append("\n");
+        }
+        if (r.getRecipeIngredientParts() != null && r.getRecipeIngredientParts().length > 0) {
+            sb.append("Ingredients: ").append(String.join(", ", r.getRecipeIngredientParts())).append("\n");
+        }
+        if (r.getCalories() > 0) {
+            sb.append("Calories: ").append(r.getCalories()).append("\n");
+        }
+        if (r.getAggregatedRating() > 0) {
+            sb.append("Rating: ").append(String.format("%.1f", r.getAggregatedRating())).append("/5\n");
+        }
+        sb.append("Protein: ").append(r.getProteinContent()).append("g, ");
+        sb.append("Fat: ").append(r.getFatContent()).append("g\n");
+        return TextSegment.from(sb.toString());
+    }
 
     public ChatResponse chat(String userMessage) {
-        String keyword = extractKeyword(userMessage);
+        // Step 1: embed user query
+        Embedding queryEmbedding = embeddingModel.embed(userMessage).content();
 
-        PageResult<RecipeRecord> searchResult = recipeService.searchRecipes(
-                keyword, null, null, 1, 5, "rating_desc");
-
-        List<RecipeRecord> recipes = searchResult != null ? searchResult.getItems() : Collections.emptyList();
-
-        String recipeContext = buildRecipeContext(recipes);
-        String systemPrompt = buildSystemPrompt(recipeContext);
-        String llmReply = callDeepSeek(systemPrompt, userMessage);
-
-        return ChatResponse.builder()
-                .reply(llmReply)
-                .recipes(recipes)
+        // Step 2: search vector store
+        EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
+                .queryEmbedding(queryEmbedding)
+                .maxResults(5)
                 .build();
-    }
-
-    private String extractKeyword(String userMessage) {
-        String prompt = "Extract search keywords from the following user message. Return only the keywords separated by spaces, nothing else.\nUser message: " + userMessage;
-
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("model", model);
-        requestBody.put("messages", List.of(
-                Map.of("role", "system", "content", "You are a keyword extraction tool. Return only keywords, no explanation or other content."),
-                Map.of("role", "user", "content", prompt)
-        ));
-        requestBody.put("max_tokens", 50);
-        requestBody.put("temperature", 0.1);
-
-        try {
-            String response = callDeepSeekApi(requestBody);
-            return parseKeywordResponse(response).trim();
-        } catch (Exception e) {
-            log.warn("Keyword extraction failed, using original message: {}", e.getMessage());
-            return userMessage;
-        }
-    }
-
-    private String buildRecipeContext(List<RecipeRecord> recipes) {
-        if (recipes.isEmpty()) {
-            return "(No matching recipes found in the database)";
-        }
-
-        try {
-            List<Map<String, Object>> simpleRecipes = new ArrayList<>();
-            for (RecipeRecord r : recipes) {
-                Map<String, Object> simple = new LinkedHashMap<>();
-                simple.put("id", r.getRecipeId());
-                simple.put("name", r.getName());
-                simple.put("category", r.getRecipeCategory());
-                simple.put("description", r.getDescription());
-                simple.put("ingredients", r.getRecipeIngredientParts());
-                simple.put("rating", r.getAggregatedRating());
-                simple.put("calories", r.getCalories());
-                simple.put("protein", r.getProteinContent());
-                simple.put("fat", r.getFatContent());
-                simpleRecipes.add(simple);
+        List<EmbeddingMatch<TextSegment>> matches = embeddingStore.search(searchRequest).matches();
+        List<RecipeRecord> recipes = new ArrayList<>();
+        StringBuilder contextBuilder = new StringBuilder();
+        for (EmbeddingMatch<TextSegment> match : matches) {
+            String recipeId = match.embedded().metadata().getString("recipeId");
+            if (recipeId != null) {
+                contextBuilder.append("[Recipe ID: ").append(recipeId).append("]\n");
             }
-            return objectMapper.writeValueAsString(simpleRecipes);
-        } catch (Exception e) {
-            log.error("Failed to serialize recipes", e);
-            return "(Recipe data serialization failed)";
+            contextBuilder.append(match.embedded().text()).append("\n---\n");
         }
-    }
 
-    private String buildSystemPrompt(String recipeContext) {
-        return "You are a professional chef and nutrition advisor. Users will ask you for food recommendations.\n" +
-                "Answer based on the local recipe data provided below.\n" +
-                "If no matching recipes are found, be honest and offer general advice.\n" +
-                "Reply in English with a friendly and natural tone.\n" +
-                "For each recommended recipe, explain why you recommend it (taste, nutrition, rating, etc.).\n\n" +
-                "[Local Recipe Data]\n" + recipeContext;
-    }
+        String context = contextBuilder.length() > 0 ? contextBuilder.toString()
+                : "(No recipes found in the database matching this query)";
 
-    private String callDeepSeek(String systemPrompt, String userMessage) {
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("model", model);
-        requestBody.put("messages", List.of(
-                Map.of("role", "system", "content", systemPrompt),
-                Map.of("role", "user", "content", userMessage)
-        ));
-        requestBody.put("max_tokens", 800);
-        requestBody.put("temperature", 0.7);
+        // Step 3: build system prompt with RAG context
+        String systemPrompt = "You are a professional chef and nutrition advisor. " +
+                "Answer user questions based on the recipe data provided below. " +
+                "If the data doesn't contain relevant recipes, say so honestly. " +
+                "Be friendly and helpful. For each recipe you recommend, briefly explain why.\n\n" +
+                "[Recipe Database]\n" + context;
 
-        return callDeepSeekApi(requestBody);
-    }
+        // Step 4: create Agent with tools and chat
+        Assistant assistant = AiServices.builder(Assistant.class)
+                .chatLanguageModel(chatLanguageModel)
+                .tools(recipeTools)
+                .build();
 
-    private String callDeepSeekApi(Map<String, Object> requestBody) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBearerAuth(apiKey);
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(new SystemMessage(systemPrompt));
+        messages.add(new UserMessage(userMessage));
 
-        HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
-
+        String reply;
         try {
-            ResponseEntity<Map> response = restTemplate.postForEntity(
-                    baseUrl + "/v1/chat/completions",
-                    request,
-                    Map.class
-            );
-
-            if (response.getBody() != null) {
-                List<Map<String, Object>> choices = (List<Map<String, Object>>) response.getBody().get("choices");
-                if (choices != null && !choices.isEmpty()) {
-                    Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-                    return (String) message.get("content");
+            // Step 5: collect recipe details from embedding matches for the response
+            for (EmbeddingMatch<TextSegment> match : matches) {
+                String recipeId = match.embedded().metadata().getString("recipeId");
+                if (recipeId != null) {
+                    try {
+                        RecipeRecord r = recipeTools.getRecipeDetail(Long.parseLong(recipeId));
+                        if (r != null) {
+                            recipes.add(r);
+                        }
+                    } catch (Exception e) {
+                        log.debug("Failed to load recipe {}: {}", recipeId, e.getMessage());
+                    }
                 }
             }
-            return "Sorry, the AI service cannot respond right now. Please try again later.";
-        } catch (Exception e) {
-            log.error("DeepSeek API call failed", e);
-            return "Sorry, the AI service is temporarily unavailable: " + e.getMessage();
-        }
-    }
 
-    private String parseKeywordResponse(String response) {
-        return response.replaceAll("(?i)keywords?[：:]\\s*", "").replaceAll("[\\n\\r]", " ").trim();
+            reply = assistant.chat(userMessage);
+        } catch (Exception e) {
+            log.error("Agent chat failed", e);
+            reply = "Sorry, the AI service is temporarily unavailable: " + e.getMessage();
+        }
+
+        return ChatResponse.builder()
+                .reply(reply)
+                .recipes(recipes)
+                .build();
     }
 }
